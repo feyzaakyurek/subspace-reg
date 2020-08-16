@@ -1,3 +1,5 @@
+# python eval_fewshot.py --model_path dumped/resnet12_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain/resnet12_last.pth --data_root data --n_shots 5 
+
 from __future__ import print_function
 
 import argparse
@@ -50,6 +52,8 @@ def parse_option():
                         help='Number of workers for dataloader')
     parser.add_argument('--test_batch_size', type=int, default=1, metavar='test_batch_size',
                         help='Size of test batch)')
+    parser.add_argument('--incremental_eval', action='store_true', 
+                        help='labels of novel samples will be incremental.')
 
     opt = parser.parse_args()
 
@@ -146,6 +150,8 @@ def main():
         model = model.cuda()
         cudnn.benchmark = True
 
+
+    
     # evalation
     start = time.time()
     val_acc, val_std = meta_test(model, meta_valloader)

@@ -1,3 +1,7 @@
+"""
+python train_supervised.py --trial pretrain --model_path dumped --tb_path tb --data_root data --reload_model dumped/resnet12_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain/resnet12_last.pth --epochs 1
+"""
+
 from __future__ import print_function
 
 import os
@@ -5,6 +9,7 @@ import argparse
 import socket
 import time
 import sys
+
 
 import tensorboard_logger as tb_logger
 import torch
@@ -45,6 +50,7 @@ def parse_option():
     parser.add_argument('--weight_decay', type=float, default=5e-4, help='weight decay')
     parser.add_argument('--momentum', type=float, default=0.9, help='momentum')
     parser.add_argument('--adam', action='store_true', help='use adam optimizer')
+    parser.add_argument('--eval_only', action='store_true', help='eval only on base classes')
 
     # dataset
     parser.add_argument('--model', type=str, default='resnet12', choices=model_pool)
@@ -57,6 +63,7 @@ def parse_option():
     parser.add_argument('--cosine', action='store_true', help='using cosine annealing')
 
     # specify folder
+    parser.add_argument('--reload_path', type=str, default='', help='path to load model from')
     parser.add_argument('--model_path', type=str, default='', help='path to save model')
     parser.add_argument('--tb_path', type=str, default='', help='path to tensorboard')
     parser.add_argument('--data_root', type=str, default='', help='path to data root')
@@ -121,7 +128,7 @@ def parse_option():
         os.makedirs(opt.save_folder)
 
     opt.n_gpu = torch.cuda.device_count()
-
+    print("Device count: ", opt.n_gpu)
     return opt
 
 
@@ -208,6 +215,10 @@ def main():
 
     # model
     model = create_model(opt.model, n_cls, opt.dataset)
+    
+    ckpt = torch.load(opt.reload_path)
+    model.load_state_dict(ckpt['model'])
+
 
     # optimizer
     if opt.adam:
@@ -244,15 +255,17 @@ def main():
             scheduler.step()
         else:
             adjust_learning_rate(epoch, opt, optimizer)
-        print("==> training...")
+            
+        if not opt.eval_only:
+            print("==> training...")
 
-        time1 = time.time()
-        train_acc, train_loss = train(epoch, train_loader, model, criterion, optimizer, opt)
-        time2 = time.time()
-        print('epoch {}, total time {:.2f}'.format(epoch, time2 - time1))
+            time1 = time.time()
+            train_acc, train_loss = train(epoch, train_loader, model, criterion, optimizer, opt)
+            time2 = time.time()
+            print('epoch {}, total time {:.2f}'.format(epoch, time2 - time1))
 
-        logger.log_value('train_acc', train_acc, epoch)
-        logger.log_value('train_loss', train_loss, epoch)
+            logger.log_value('train_acc', train_acc, epoch)
+            logger.log_value('train_loss', train_loss, epoch)
 
         test_acc, test_acc_top5, test_loss = validate(val_loader, model, criterion, opt)
 
