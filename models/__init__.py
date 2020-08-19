@@ -1,6 +1,6 @@
 from .convnet import convnet4
-from .resnet import resnet12
-from .resnet import seresnet12
+from .resnet_language import resnet12
+from .resnet_language import seresnet12
 from .wresnet import wrn_28_10
 
 from .resnet_new import resnet50

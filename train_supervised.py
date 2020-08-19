@@ -30,6 +30,7 @@ from util import adjust_learning_rate, accuracy, AverageMeter
 from eval.meta_eval import meta_test
 from eval.cls_eval import validate
 
+import pdb
 
 def parse_option():
 
@@ -83,7 +84,8 @@ def parse_option():
                         help='Size of test batch)')
 
     parser.add_argument('-t', '--trial', type=str, default='1', help='the experiment id')
-
+    parser.add_argument('--incremental_eval', action='store_true', help='incremental_eval')
+    parser.add_argument('--use_word_embeddings', action='store_true', help='word embedding classifier')
     opt = parser.parse_args()
 
     if opt.dataset == 'CIFAR-FS' or opt.dataset == 'FC100':
@@ -213,11 +215,17 @@ def main():
     else:
         raise NotImplementedError(opt.dataset)
 
+    if opt.use_word_embeddings:
+        vocab = [name for name in train_loader.dataset.label2human if name != '']
+    else:
+        vocab = None
+
     # model
-    model = create_model(opt.model, n_cls, opt.dataset)
-    
-    ckpt = torch.load(opt.reload_path)
-    model.load_state_dict(ckpt['model'])
+    model = create_model(opt.model, n_cls, opt.dataset, vocab=vocab)
+
+   # if reload_path == '':
+   #     ckpt = torch.load(opt.reload_path)
+   #     model.load_state_dict(ckpt['model'])
 
 
     # optimizer
@@ -255,7 +263,7 @@ def main():
             scheduler.step()
         else:
             adjust_learning_rate(epoch, opt, optimizer)
-            
+
         if not opt.eval_only:
             print("==> training...")
 
@@ -303,7 +311,7 @@ def train(epoch, train_loader, model, criterion, optimizer, opt):
     top5 = AverageMeter()
 
     end = time.time()
-    for idx, (input, target, _) in enumerate(train_loader):
+    for idx, (input, target,  _) in enumerate(train_loader):
         data_time.update(time.time() - end)
 
         input = input.float()

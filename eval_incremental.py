@@ -59,6 +59,7 @@ def parse_option():
     parser.add_argument('--test_base_batch_size', type=int, default=64, metavar='test_batch_size',
                         help='Size of test batch)')
     parser.add_argument('--incremental_eval', action='store_true', help='labels of novel samples will be incremental.')
+    parser.add_argument('--use_word_embeddings', action='store_true', help='word embedding classifier')
 
     opt = parser.parse_args()
 
@@ -72,7 +73,7 @@ def parse_option():
         opt.data_root = './data/{}'.format(opt.dataset)
     else:
         opt.data_root = '{}/{}'.format(opt.data_root, opt.dataset)
-    opt.data_aug = True
+        opt.data_aug = True
 
     return opt
 
@@ -83,18 +84,22 @@ def main():
 
     # test loader
     args = opt
-
+    
     if opt.dataset == 'miniImageNet':
         train_trans, test_trans = transforms_test_options[opt.transform]
+
+        train_loader = DataLoader(ImageNet(args=opt, partition='train', transform=train_trans), #FIXME: use train
+                                  batch_size=64, shuffle=True, drop_last=True,
+                                  num_workers=opt.num_workers)
         
         # load base evaluation dataset
         base_val_loader = DataLoader(ImageNet(args=opt, partition='val', transform=test_trans),
-                                batch_size=opt.test_base_batch_size // 2, shuffle=True, drop_last=False,
-                                num_workers=opt.num_workers // 2)
+                                     batch_size=opt.test_base_batch_size // 2, shuffle=True, drop_last=False,
+                                     num_workers=opt.num_workers // 2)
         
         base_test_loader = DataLoader(ImageNet(args=opt, partition='test', transform=test_trans),
-                                batch_size=opt.test_base_batch_size // 2, shuffle=False, drop_last=False,
-                                num_workers=opt.num_workers // 2)
+                                      batch_size=opt.test_base_batch_size // 2, shuffle=False, drop_last=False,
+                                      num_workers=opt.num_workers // 2)
         
         meta_testloader = DataLoader(MetaImageNet(args=opt, partition='test',
                                                   train_transform=train_trans,
@@ -157,7 +162,11 @@ def main():
         raise NotImplementedError(opt.dataset)
 
     # load model
-    model = create_model(opt.model, n_cls, opt.dataset)
+    if opt.use_word_embeddings:
+        vocab = [name for name in train_loader.dataset.label2human if name != '']
+    else:
+        vocab = None
+    model = create_model(opt.model, n_cls, opt.dataset, vocab=vocab)
     ckpt = torch.load(opt.model_path)
     model.load_state_dict(ckpt['model'])
 
@@ -170,15 +179,31 @@ def main():
     # evalation
         
     if opt.incremental_eval:
-        for alpha in np.arange(0.7,0.8,0.02):
+        best_alpha = 0.7
+        best_score = 0.0
+        for alpha in np.arange(0.7,0.9,0.02):
             start = time.time()
             novel, base = incremental_test(model, meta_valloader, base_val_loader, alpha, use_logit=True)
             val_time = time.time() - start
+            avg_score = (base[0]+novel[0])/2
+            if avg_score > best_score:
+                best_score = avg_score
+                best_alpha = alpha
             print('alpha: ', alpha)
             print('val_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel[0], novel[1], val_time))
             print('val_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base[0], base[1], val_time))
             print('average: {:.4f}'.format((base[0]+novel[0])/2))
-#             wandb.log({"Novel val accuracy": novel_val_acc, "Base val accuracy": base_val_acc, "Alpha":alpha})
+                
+        start = time.time()
+        novel, base = incremental_test(model, meta_testloader, base_test_loader, best_alpha, use_logit=True)
+        test_time = time.time() - start
+        avg_test_score = (base[0]+novel[0])/2
+        print('test_alpha: {0}'.format(best_alpha))
+        print('test_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel[0], novel[1], test_time))
+        print('test_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base[0], base[1], test_time))
+        print('average: {:.4f}'.format((base[0]+novel[0])/2))
+        
+#       wandb.log({"Novel val accuracy": novel_val_acc, "Base val accuracy": base_val_acc, "Alpha":alpha})
 
 #         start = time.time()
 #         val_acc_feat, val_std_feat = incremental_test(model, meta_valloader, use_logit=False)
@@ -246,7 +271,7 @@ def get_wkprimes_val(novel_val_train_loaders, cac_model, kprimes_val, args):
         for i,w in enumerate(w_for_kprime):
             w_kprimes_list[i].append(w)
     return w_kprimes_list
-    
+
 def validation_manager(base_val_loader,
                        novel_val_train_loaders,
                        novel_val_val_loaders,
@@ -263,7 +288,7 @@ def validation_manager(base_val_loader,
                        args,
                        writer,
                        mode):
-   
+    
     global best_acc1
     global total_steps
     # evaluate in kprime_val classes
@@ -297,10 +322,10 @@ def validation_manager(base_val_loader,
 
     acc1 = np.mean(acc)
     wandb.log({"NovelVal/Top1/Base-Base-Only": np.mean(bo),
-           "NovelVal/Top1/Base-Both": np.mean(bb),
-           "NovelVal/Top1/Novel-Both": np.mean(nb),
-           "NovelVal/Top1/Novel-Novel-Only": np.mean(no),
-           "NovelVal/Top1/Both": acc1}, step=total_steps)
+               "NovelVal/Top1/Base-Both": np.mean(bb),
+               "NovelVal/Top1/Novel-Both": np.mean(nb),
+               "NovelVal/Top1/Novel-Novel-Only": np.mean(no),
+               "NovelVal/Top1/Both": acc1}, step=total_steps)
     
     # evaluate in the novel kprime_val classes
     print("===Average of novel and base scores with base AND novel classifier weights===")
@@ -311,14 +336,14 @@ def validation_manager(base_val_loader,
     best_acc1 = max(acc1, best_acc1)
 
     save_checkpoint({
-            'epoch': epoch + 1,
-            'cac_state_dict': cac_model.state_dict(),
-            'backbone_state_dict': backbone.state_dict(),
-            'tau': tau,
-            'base_classifier_weights': base_classifier_weights,
-            'best_acc1': best_acc1,
-            'optimizer' : optimizer.state_dict(),
-        }, is_best)
+        'epoch': epoch + 1,
+        'cac_state_dict': cac_model.state_dict(),
+        'backbone_state_dict': backbone.state_dict(),
+        'tau': tau,
+        'base_classifier_weights': base_classifier_weights,
+        'best_acc1': best_acc1,
+        'optimizer' : optimizer.state_dict(),
+    }, is_best)
 
     return acc1
 
@@ -329,13 +354,13 @@ def get_base_evaluation(base_val_loader, backbone, W, criterion, args, verbose):
     top1 = AverageMeter('Acc@1', ':6.2f')
     top5 = AverageMeter('Acc@5', ':6.2f')
     progress = ProgressMeter(
-    len(base_val_loader),
-    [batch_time, losses, top1, top5],
-    prefix='Base Val: ')
+        len(base_val_loader),
+        [batch_time, losses, top1, top5],
+        prefix='Base Val: ')
 
     # eval mode
     backbone.eval()
-        
+    
     with torch.no_grad():
         end = time.time()    
         for i, (images, target) in enumerate(base_val_loader):
@@ -352,11 +377,11 @@ def get_base_evaluation(base_val_loader, backbone, W, criterion, args, verbose):
             losses.update(loss.item(), images.size(0))
 
             # if there is only one classifier weight - # TODO this is confusing
-#             if scores.shape[1] == 1:
-#                 acc1 = accuracy(scores, target, topk=(1,))
-#                 top1.update(acc1[0], images.size(0))
-#                 top5.update(100., images.size(0))
-#             else:
+            #             if scores.shape[1] == 1:
+            #                 acc1 = accuracy(scores, target, topk=(1,))
+            #                 top1.update(acc1[0], images.size(0))
+            #                 top5.update(100., images.size(0))
+            #             else:
             acc1, acc5 = accuracy(scores, target, topk=(1,5))
             top1.update(acc1[0], images.size(0))
             top5.update(acc5[0], images.size(0))
@@ -380,9 +405,9 @@ def get_novel_evaluation(novel_val_loaders, label_mapping, backbone, W, criterio
         top5 = AverageMeter('Acc@5', ':6.2f')
 
         progress = ProgressMeter(
-        len(loader),
-        [batch_time, losses, top1, top5],
-        prefix='Novel Val: ')
+            len(loader),
+            [batch_time, losses, top1, top5],
+            prefix='Novel Val: ')
 
         with torch.no_grad():
             end = time.time()
@@ -393,7 +418,7 @@ def get_novel_evaluation(novel_val_loaders, label_mapping, backbone, W, criterio
                 _, features = backbone(images)
                 scores = features @ W.transpose(0,1)
                 loss = criterion(scores, target)
-            
+                
                 # update losses
                 losses.update(loss.item(), images.size(0))
                 
@@ -429,7 +454,7 @@ def get_novel_evaluation(novel_val_loaders, label_mapping, backbone, W, criterio
                 
                 if verbose and j % args.print_freq == 0:
                     progress.display(j)
-#         ipdb.set_trace()
+                    #         ipdb.set_trace()
         top1_forall.update(top1.avg.item(), size)
         
         if verbose:
@@ -438,9 +463,9 @@ def get_novel_evaluation(novel_val_loaders, label_mapping, backbone, W, criterio
     if verbose: 
         print(' * NOVEL: Acc@1 {top1_forall.avg:.3f}'
               .format(top1_forall=top1_forall))
-          
+        
     return(top1_forall.avg)
-    
+
 def validate(base_val_loader, novel_val_loaders, backbone, w_kprimes,
              base_classifier_weights, criterion, mapping_with_base,
              mapping_novel_only, epoch, args, writer, mode, verbose):
@@ -455,31 +480,31 @@ def validate(base_val_loader, novel_val_loaders, backbone, w_kprimes,
 
     if verbose:
         print("===Base class evaluation with base classifier weights only===")
-    base_only = get_base_evaluation(base_val_loader, backbone, 
-                                    base_classifier_weights, criterion, args, 
-                                    verbose)
+        base_only = get_base_evaluation(base_val_loader, backbone, 
+                                        base_classifier_weights, criterion, args, 
+                                        verbose)
     if verbose:
         print("===Base class evaluation with base AND novel classifier weights===")
-    base_both = get_base_evaluation(base_val_loader, backbone, W, criterion, 
-                                    args, verbose)
+        base_both = get_base_evaluation(base_val_loader, backbone, W, criterion, 
+                                        args, verbose)
     if verbose:
         print("===Novel class evaluation with base AND novel classifier weights===")
-    novel_both = get_novel_evaluation(novel_val_loaders, mapping_with_base, 
-                                      backbone, W, criterion, args, verbose)
+        novel_both = get_novel_evaluation(novel_val_loaders, mapping_with_base, 
+                                          backbone, W, criterion, args, verbose)
     if verbose:
         print("===Novel class evaluation with novel classifier weights only===")
-    novel_only = get_novel_evaluation(novel_val_loaders, mapping_novel_only, 
-                                      backbone, wkprimes, criterion, args, verbose)
-    
+        novel_only = get_novel_evaluation(novel_val_loaders, mapping_novel_only, 
+                                          backbone, wkprimes, criterion, args, verbose)
+        
     acc1 = (novel_both + base_both)/2
     if verbose:
         print("===Average of novel and base scores with base AND novel classifier weights===")
         print(acc1)
-    
+        
     # save to wandb
     if mode == "val":
         return acc1, base_only, base_both, novel_both, novel_only
-        
+    
     wandb.log({"NovelTrain/Top1/Base-Base-Only": base_only,
                "NovelTrain/Top1/Base-Both": base_both,
                "NovelTrain/Top1/Novel-Both": novel_both,
