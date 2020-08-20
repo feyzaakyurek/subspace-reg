@@ -97,7 +97,7 @@ def incremental_test(net, testloader, val_loader, alpha, use_logit=False, is_nor
 
             acc_novel.append(metrics.accuracy_score(query_ys, query_ys_pred))
             
-            if idx >= 50:
+            if idx >= 5:
                 return mean_confidence_interval(acc_novel), mean_confidence_interval(acc_base)
 
 

@@ -4,7 +4,7 @@ from __future__ import print_function
 from . import model_dict
 
 
-def create_model(name, n_cls, dataset='miniImageNet'):
+def create_model(name, n_cls, dataset='miniImageNet', vocab=None):
     """create model by name"""
     if dataset == 'miniImageNet' or dataset == 'tieredImageNet':
         if name.endswith('v2') or name.endswith('v3'):
@@ -13,7 +13,7 @@ def create_model(name, n_cls, dataset='miniImageNet'):
             print('use imagenet-style resnet50')
             model = model_dict[name](num_classes=n_cls)
         elif name.startswith('resnet') or name.startswith('seresnet'):
-            model = model_dict[name](avg_pool=True, drop_rate=0.1, dropblock_size=5, num_classes=n_cls)
+            model = model_dict[name](avg_pool=True, drop_rate=0.1, dropblock_size=5, num_classes=n_cls, vocab=vocab)
         elif name.startswith('wrn'):
             model = model_dict[name](num_classes=n_cls)
         elif name.startswith('convnet'):

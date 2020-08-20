@@ -5,7 +5,7 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 import torchvision.transforms as transforms
-
+import warnings
 
 class ImageNet(Dataset):
     def __init__(self, args, partition='train', pretrain=True, is_sample=False, k=4096,
@@ -48,7 +48,20 @@ class ImageNet(Dataset):
             data = pickle.load(f, encoding='latin1')
             self.imgs = data['data']
             self.labels = data['labels']
-
+            self.cat2label = data['catname2label']
+            
+        self.label2human = [""]*100
+        
+        with open(os.path.join(self.data_root, 'class_labels.txt'), 'r') as f:
+            for line in f.readlines():
+                catname, humanname = line.strip().lower().split(' ')
+                humanname = " ".join(humanname.split('_'))
+                if catname in self.cat2label:
+                    label = self.cat2label[catname]
+                    self.label2human[label]= humanname
+                    
+        self.global_labels = self.labels
+        #print(self.global_labels)
         # pre-process for contrastive sampling
         self.k = k
         self.is_sample = is_sample
@@ -77,7 +90,6 @@ class ImageNet(Dataset):
         img = np.asarray(self.imgs[item]).astype('uint8')
         img = self.transform(img)
         target = self.labels[item] - min(self.labels)
-
         if not self.is_sample:
             return img, target, item
         else:
