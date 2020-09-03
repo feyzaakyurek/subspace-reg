@@ -2,9 +2,13 @@ import torch.nn as nn
 import torch
 import torch.nn.functional as F
 from torch.distributions import Bernoulli
-from torchnlp.word_to_vector import Vico
 import math
+import numpy as np
+import os
+import pickle
 import pdb
+
+
 def conv3x3(in_planes, out_planes, stride=1):
     """3x3 convolution with padding"""
     return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
@@ -147,23 +151,27 @@ class BasicBlock(nn.Module):
         return out
 
 class LangLinearClassifier(nn.Module):
-    def __init__(self, vocab,  dim=500, cdim=640, bias=True):
+    def __init__(self, vocab,  load_embeds, dim, cdim=640, bias=True, verbose=True):
         super(LangLinearClassifier, self).__init__()
         self.vocab = vocab
+        self.dim = dim
         bound = 1 / math.sqrt(cdim)
+        assert os.path.exists(load_embeds)
 
         words = []
         for token in vocab:
             words = words + token.split(' ')
+         
+        
+        # Load the embed dict pickle
+        if verbose:
+            print(f"Reading embeddings from {load_embeds}...")    
+        with open(load_embeds, 'rb') as f: 
+            pretrained_embedding = pickle.load(f)
 
-        pretrained_embedding = Vico(name='linear',
-                                    dim=dim,
-                                    is_include=lambda w: w in set(words))
-
-        print(pretrained_embedding.token_to_index)
 
         for w in words:
-            if w not in pretrained_embedding.token_to_index: print("not found: "+ w)
+            if w not in pretrained_embedding: print("not found: "+ w)
 
         # vectors = pretrained_embedding.vectors
 
@@ -173,7 +181,10 @@ class LangLinearClassifier(nn.Module):
         for (i,token) in enumerate(vocab):
             words = token.split(' ')
             for w in words:
-                embed_tensor[i] += pretrained_embedding[w]
+                try:
+                    embed_tensor[i] += torch.from_numpy(pretrained_embedding[w])
+                except KeyError:
+                    continue
             embed_tensor[i] /= len(words)
 
         self.embed = nn.Parameter(embed_tensor * 0.05, requires_grad=False)
@@ -190,18 +201,23 @@ class LangLinearClassifier(nn.Module):
         else:
             self.register_parameter('bias', None)
 
-
     def weight(self):
         return self.embed @ self.transform_W 
 
     def forward(self, input):
         return F.linear(input, self.weight(), self.bias)
+    
+    
+
 
 
 class ResNet(nn.Module):
 
     def __init__(self, block, n_blocks, keep_prob=1.0, avg_pool=False, drop_rate=0.0,
-                 dropblock_size=5, num_classes=-1, use_se=False, vocab=None):
+                 dropblock_size=5, num_classes=-1, use_se=False, vocab=None, opt=None):
+        if vocab is not None:
+            assert opt is not None
+            
         super(ResNet, self).__init__()
 
         self.inplanes = 3
@@ -235,7 +251,10 @@ class ResNet(nn.Module):
             if vocab is None:
                 self.classifier = nn.Linear(640, self.num_classes)
             else:
-                self.classifier = LangLinearClassifier(vocab, cdim=640, dim=500)
+                embed_pth = os.path.join(opt.word_embed_path, "{0}_dim{1}.pickle".format(opt.dataset, opt.word_embed_size))
+                self.classifier = LangLinearClassifier(vocab, embed_pth, cdim=640, 
+                                                       dim=opt.word_embed_size, 
+                                                       bias=opt.lang_classifier_bias)
 
     def _make_layer(self, block, n_block, planes, stride=1, drop_rate=0.0, drop_block=False, block_size=1):
         downsample = None
@@ -263,6 +282,7 @@ class ResNet(nn.Module):
             layers.append(layer)
 
         return nn.Sequential(*layers)
+    
 
     def forward(self, x, is_feat=False):
         x = self.layer1(x)
