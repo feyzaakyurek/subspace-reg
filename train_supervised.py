@@ -26,7 +26,7 @@ from dataset.tiered_imagenet import TieredImageNet, MetaTieredImageNet
 from dataset.cifar import CIFAR100, MetaCIFAR100
 from dataset.transform_cfg import transforms_options, transforms_list
 
-from util import adjust_learning_rate, accuracy, AverageMeter
+from util import adjust_learning_rate, accuracy, AverageMeter, create_and_save_embeds
 from eval.meta_eval import meta_test
 from eval.cls_eval import validate
 
@@ -82,12 +82,22 @@ def parse_option():
                         help='The number of augmented samples for each meta test sample')
     parser.add_argument('--test_batch_size', type=int, default=1, metavar='test_batch_size',
                         help='Size of test batch)')
-
+    
+    parser.add_argument('--classifier', type=str, 
+                        choices=['linear', 'lang-linear'])
     parser.add_argument('-t', '--trial', type=str, default='1', help='the experiment id')
-    parser.add_argument('--incremental_eval', action='store_true', help='incremental_eval')
-    parser.add_argument('--use_word_embeddings', action='store_true', help='word embedding classifier')
+    parser.add_argument('--eval_mode', type=str, default=None) # TODO
+    
+    if parser.parse_known_args()[0].classifier in ["lang-linear"]:
+        parser.add_argument('--word_embed_size', type=int, default=None, help='Word embedding classifier')
+        parser.add_argument('--lang_classifier_bias', action='store_true', help='Use of bias in lang classifier.')
+        parser.add_argument('--word_embed_path', type=str, default="word_embeds")
+    
     opt = parser.parse_args()
 
+    if opt.lang_classifier_bias:
+        assert opt.word_embed_size is not None
+        
     if opt.dataset == 'CIFAR-FS' or opt.dataset == 'FC100':
         opt.transform = 'D'
 
@@ -214,14 +224,21 @@ def main():
                 raise NotImplementedError('dataset not supported: {}'.format(opt.dataset))
     else:
         raise NotImplementedError(opt.dataset)
+        
+    # Save full dataset vocab if not available
+    vocab_train = [name for name in train_loader.dataset.label2human if name != '']
+    vocab_test = [name for name in meta_testloader.dataset.label2human if name != '']
+    vocab_val = [name for name in meta_valloader.dataset.label2human if name != '']
+    vocab = vocab_train + vocab_test + vocab_val
+    create_and_save_embeds(opt, vocab)
 
-    if opt.use_word_embeddings:
+    if opt.word_embed_size is not None:
         vocab = [name for name in train_loader.dataset.label2human if name != '']
     else:
         vocab = None
 
     # model
-    model = create_model(opt.model, n_cls, opt.dataset, vocab=vocab)
+    model = create_model(opt.model, n_cls, opt, vocab=vocab)
 
    # if reload_path == '':
    #     ckpt = torch.load(opt.reload_path)
@@ -296,7 +313,7 @@ def main():
         'opt': opt,
         'model': model.state_dict() if opt.n_gpu <= 1 else model.module.state_dict(),
     }
-    save_file = os.path.join(opt.save_folder, '{}_last.pth'.format(opt.model))
+    save_file = os.path.join(opt.save_folder, '{}_last{}.pth'.format(opt.model, opt.lang_classifier_bias))
     torch.save(state, save_file)
 
 
