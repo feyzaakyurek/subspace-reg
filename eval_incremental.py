@@ -5,6 +5,9 @@ from __future__ import print_function
 import argparse
 import socket
 import time
+import ipdb
+import os
+import pickle
 
 import numpy as np
 import torch
@@ -19,8 +22,10 @@ from dataset.tiered_imagenet import MetaTieredImageNet
 from dataset.cifar import MetaCIFAR100
 from dataset.transform_cfg import transforms_test_options, transforms_list
 
-from eval.meta_eval import meta_test, incremental_test
+from eval.meta_eval import meta_test, incremental_test, zero_shot_test, zero_shot_incremental_test
 from eval.cls_eval import incremental_validate
+from util import create_and_save_embeds, restricted_float
+
 
 # import wandb
 # wandb.init(project="rfs")
@@ -58,8 +63,30 @@ def parse_option():
                         help='Size of test batch)')
     parser.add_argument('--test_base_batch_size', type=int, default=64, metavar='test_batch_size',
                         help='Size of test batch)')
-    parser.add_argument('--incremental_eval', action='store_true', help='labels of novel samples will be incremental.')
-    parser.add_argument('--use_word_embeddings', action='store_true', help='word embedding classifier')
+    parser.add_argument('--eval_mode', type=str, 
+                        choices=['few-shot', 'few-shot-incremental', 'zero-shot', 
+                                 'zero-shot-incremental', 'few-shot-language-incremental'])
+    parser.add_argument('--classifier', type=str, 
+                        choices=['linear', 'lang-linear'])
+    
+    if parser.parse_known_args()[0].eval_mode in ["incremental","zero-shot-incremental"]:
+        parser.add_argument("--start_alpha", type=restricted_float, default="0.7",
+                            help="Alpha is the fraction to multiply base scores with. Start is the beginning of the range to try.")
+        parser.add_argument("--end_alpha", type=restricted_float, default="0.9",
+                            help="Alpha is the fraction to multiply base scores with. End is the beginning of the range to try.")
+        parser.add_argument("--inc_alpha", type=restricted_float, default="0.01",
+                            help="Alpha is the fraction to multiply base scores with. Inc is increment.")
+        
+    if parser.parse_known_args()[0].classifier in ["lang-linear"]:
+        parser.add_argument('--word_embed_size', type=int, default=None, 
+                            help='Word embedding classifier')
+        parser.add_argument('--word_embed_path', type=str, default="word_embeds",
+                            help='Where to store word embeds pickles for dataset.')
+        parser.add_argument('--lang_classifier_bias', action='store_true', 
+                            help='Use of bias in lang classifier.')
+    if parser.parse_known_args()[0].eval_mode == 'zero-shot-incremental':
+        parser.add_argument('--num_novel_combs', type=int, default=5, 
+                            help='Number of combinations of novel/test classes to evaluate base samples against:)')
 
     opt = parser.parse_args()
 
@@ -160,14 +187,23 @@ def main():
                 raise NotImplementedError('dataset not supported: {}'.format(opt.dataset))
     else:
         raise NotImplementedError(opt.dataset)
+        
 
     # load model
-    if opt.use_word_embeddings:
-        vocab = [name for name in train_loader.dataset.label2human if name != '']
+    if opt.classifier in ["lang-linear"]:
+        # Save full dataset vocab if not available
+        vocab_train = [name for name in train_loader.dataset.label2human if name != '']
+        vocab_test = [name for name in meta_testloader.dataset.label2human if name != '']
+        vocab_val = [name for name in meta_valloader.dataset.label2human if name != '']
+        vocab_all = vocab_train + vocab_test + vocab_val
+        create_and_save_embeds(opt, vocab_all)
+        vocab = vocab_train
     else:
         vocab = None
-    model = create_model(opt.model, n_cls, opt.dataset, vocab=vocab)
+        
+    model = create_model(opt.model, n_cls, opt, vocab=vocab, dataset=opt.dataset)
     ckpt = torch.load(opt.model_path)
+    print("Loading model...")
     model.load_state_dict(ckpt['model'])
 
     if torch.cuda.is_available():
@@ -176,14 +212,15 @@ def main():
 
 #     wandb.watch(model)
     
-    # evalation
+    # evaluation
         
-    if opt.incremental_eval:
-        best_alpha = 0.7
+    if opt.eval_mode == "few-shot-incremental":
+        best_alpha = opt.start_alpha
         best_score = 0.0
-        for alpha in np.arange(0.7,0.9,0.02):
+        for alpha in np.arange(opt.start_alpha,opt.end_alpha,opt.inc_alpha):
             start = time.time()
-            novel, base = incremental_test(model, meta_valloader, base_val_loader, alpha, use_logit=True)
+            novel, base = incremental_test(model, meta_valloader, base_val_loader, 
+                                               alpha, use_logit=False)
             val_time = time.time() - start
             avg_score = (base[0]+novel[0])/2
             if avg_score > best_score:
@@ -203,23 +240,49 @@ def main():
         print('test_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base[0], base[1], test_time))
         print('average: {:.4f}'.format((base[0]+novel[0])/2))
         
-#       wandb.log({"Novel val accuracy": novel_val_acc, "Base val accuracy": base_val_acc, "Alpha":alpha})
-
-#         start = time.time()
-#         val_acc_feat, val_std_feat = incremental_test(model, meta_valloader, use_logit=False)
-#         val_time = time.time() - start
-#         print('val_acc_feat_novel: {:.4f}, val_std: {:.4f}, time: {:.1f}'.format(val_acc_feat, val_std_feat, val_time))
-        
-#         start = time.time()
-#         test_acc, test_acc_top5, test_loss = incremental_test(val_loader, model, criterion, opt)
-#         test_time = time.time() - start
-#         print('val_acc_base: {:.4f}, val_acc_top5: {:.4f}, time: {:.1f}, loss: {:.1f}'.format(test_acc, test_acc_top5, test_time, test_loss))
-        
-
-#         logger.log_value('test_acc', test_acc, epoch)
-#         logger.log_value('test_acc_top5', test_acc_top5, epoch)
-#         logger.log_value('test_loss', test_loss, epoch)
     
+    elif opt.eval_mode == "zero-shot":
+        assert opt.classifier == "lang-linear"
+        start = time.time()
+        novel = zero_shot_test(model, meta_valloader, opt, use_logit=False) 
+        val_time = time.time() - start
+        print('val_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel[0], novel[1], val_time))
+        print('val_score: {:.4f}'.format(novel[0]))
+                  
+        start = time.time()
+        novel = zero_shot_test(model, meta_testloader, opt, is_norm=False, use_logit=False) 
+        test_time = time.time() - start       
+        print('test_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel[0], novel[1], test_time))
+        print('test_score: {:.4f}'.format(novel[0]))
+         
+    elif opt.eval_mode == "zero-shot-incremental":
+        assert opt.classifier == "lang-linear"
+        best_alpha = opt.start_alpha
+        best_score = 0.0
+        for alpha in np.arange(opt.start_alpha,opt.end_alpha,opt.inc_alpha):
+            start = time.time()
+            novel, base = zero_shot_incremental_test(model, meta_valloader, base_val_loader, opt, alpha) 
+            val_time = time.time() - start
+            avg_score = (base[0]+novel[0])/2
+            if avg_score > best_score:
+                best_score = avg_score
+                best_alpha = alpha
+            print('alpha: ', alpha)
+            print('val_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel[0], novel[1], val_time))
+            print('val_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base[0], base[1], val_time))
+            print('average: {:.4f}'.format((base[0]+novel[0])/2))
+                  
+        start = time.time()
+        novel,base = zero_shot_incremental_test(model, meta_valloader, base_val_loader, opt, best_alpha) 
+        test_time = time.time() - start   
+        print('test_alpha: {0}'.format(best_alpha))
+        print('test_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel[0], novel[1], test_time))
+        print('test_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base[0], base[1], test_time))
+        print('average: {:.4f}'.format((base[0]+novel[0])/2))
+        
+    elif opt.eval_mode == "few-shot-language-incremental":
+        raise NotImplementedError
+        
     else:
         start = time.time()
         val_acc, val_std = meta_test(model, meta_valloader)
@@ -241,284 +304,8 @@ def main():
         test_time = time.time() - start
         print('test_acc_feat: {:.4f}, test_std: {:.4f}, time: {:.1f}'.format(test_acc_feat, test_std_feat, test_time))
 
-def get_wkprimes_val(novel_val_train_loaders, cac_model, kprimes_val, args):
-    
-    w_kprimes = defaultdict(list)
-    cac_model.eval()
-    
-    with torch.no_grad():
-        for kprime in kprimes_val:
-            loader = novel_val_train_loaders[kprime]
-            for data in loader:
-                
-                # send data to gpu
-                device = torch.device('cuda') # TODO Hard coded.
-                data[0] = [d.to(device, non_blocking=True) for d in data[0]]
-                data[1] = data[1].to(device, non_blocking=True)
-                
-                w_kprime = cac_model(data).unsqueeze(0)
-                w_kprimes[kprime].append(w_kprime)
-                
-    least_number_of_wkprime_per_kprime = min([len(ws) for kprime, ws in w_kprimes.items()])
-    num_set_of_wkprimes = min(least_number_of_wkprime_per_kprime, args.num_set_of_wkprimes)
-    print("Sampling {} sets of wkprimes for val evaluation...".format(num_set_of_wkprimes))
-    
-    # returns list of lists
-    w_kprimes_list = [[] for i in range(num_set_of_wkprimes)]
 
-    for kprime in kprimes_val:
-        w_for_kprime = np.random.choice(w_kprimes[kprime], num_set_of_wkprimes, replace=False)
-        for i,w in enumerate(w_for_kprime):
-            w_kprimes_list[i].append(w)
-    return w_kprimes_list
 
-def validation_manager(base_val_loader,
-                       novel_val_train_loaders,
-                       novel_val_val_loaders,
-                       cac_model,
-                       backbone,
-                       tau,
-                       kprimes_val,
-                       base_classifier_weights,
-                       criterion,
-                       optimizer,
-                       mapping_val_with_base,
-                       mapping_val_novel_only,
-                       epoch,
-                       args,
-                       writer,
-                       mode):
-    
-    global best_acc1
-    global total_steps
-    # evaluate in kprime_val classes
-
-    ## 1. first determine a set of w_kprimes_val for novel classes (different from training)
-    ## with only a forward pass.
-    w_kprimes_val = get_wkprimes_val(novel_val_train_loaders, 
-                                     cac_model, 
-                                     kprimes_val, 
-                                     args)
-
-    ## 2. then evaluate on all validation sets available for base and kprimes_val classes. TODO 
-    acc = []
-    bo = []
-    bb = []
-    nb = []
-    no = []
-
-    for w_kprimes in w_kprimes_val:
-        result = validate(base_val_loader, novel_val_val_loaders, backbone, 
-                          w_kprimes, base_classifier_weights, criterion, 
-                          mapping_val_with_base, mapping_val_novel_only, epoch, 
-                          args, writer, mode="val", verbose=False)
-        
-        acc_, base_only, base_both, novel_both, novel_only = result
-        acc.append(acc_)
-        bo.append(base_only)
-        bb.append(base_both)
-        nb.append(novel_both)
-        no.append(novel_only)
-
-    acc1 = np.mean(acc)
-    wandb.log({"NovelVal/Top1/Base-Base-Only": np.mean(bo),
-               "NovelVal/Top1/Base-Both": np.mean(bb),
-               "NovelVal/Top1/Novel-Both": np.mean(nb),
-               "NovelVal/Top1/Novel-Novel-Only": np.mean(no),
-               "NovelVal/Top1/Both": acc1}, step=total_steps)
-    
-    # evaluate in the novel kprime_val classes
-    print("===Average of novel and base scores with base AND novel classifier weights===")
-    print(acc1)
-
-    # save the best model
-    is_best = acc1 > best_acc1
-    best_acc1 = max(acc1, best_acc1)
-
-    save_checkpoint({
-        'epoch': epoch + 1,
-        'cac_state_dict': cac_model.state_dict(),
-        'backbone_state_dict': backbone.state_dict(),
-        'tau': tau,
-        'base_classifier_weights': base_classifier_weights,
-        'best_acc1': best_acc1,
-        'optimizer' : optimizer.state_dict(),
-    }, is_best)
-
-    return acc1
-
-def get_base_evaluation(base_val_loader, backbone, W, criterion, args, verbose):
-    
-    batch_time = AverageMeter('Time', ':6.3f')
-    losses = AverageMeter('Loss', ':.4e')
-    top1 = AverageMeter('Acc@1', ':6.2f')
-    top5 = AverageMeter('Acc@5', ':6.2f')
-    progress = ProgressMeter(
-        len(base_val_loader),
-        [batch_time, losses, top1, top5],
-        prefix='Base Val: ')
-
-    # eval mode
-    backbone.eval()
-    
-    with torch.no_grad():
-        end = time.time()    
-        for i, (images, target) in enumerate(base_val_loader):
-
-            images = images.cuda(non_blocking=True)
-            target = target.cuda(non_blocking=True)
-
-            _, features = backbone(images)
-            scores = features @ W.transpose(0,1)
-            loss = criterion(scores, target)
-            
-            
-            # update losses
-            losses.update(loss.item(), images.size(0))
-
-            # if there is only one classifier weight - # TODO this is confusing
-            #             if scores.shape[1] == 1:
-            #                 acc1 = accuracy(scores, target, topk=(1,))
-            #                 top1.update(acc1[0], images.size(0))
-            #                 top5.update(100., images.size(0))
-            #             else:
-            acc1, acc5 = accuracy(scores, target, topk=(1,5))
-            top1.update(acc1[0], images.size(0))
-            top5.update(acc5[0], images.size(0))
-            
-            batch_time.update(time.time() - end)
-            end = time.time()
-            
-            if verbose and i % args.print_freq == 0:
-                progress.display(i)
-        if verbose:
-            print(' * BASE: Acc@1 {top1.avg:.3f} Acc@5 {top5.avg:.3f}'
-                  .format(top1=top1, top5=top5))
-    return(top1.avg.item())
-
-def get_novel_evaluation(novel_val_loaders, label_mapping, backbone, W, criterion, args, verbose):
-    top1_forall = AverageMeter('AccOverall@1', ':6.2f')
-    for kprime, loader in novel_val_loaders.items():
-        batch_time = AverageMeter('Time', ':6.3f')
-        losses = AverageMeter('Loss', ':.4e')
-        top1 = AverageMeter('Acc@1', ':6.2f')
-        top5 = AverageMeter('Acc@5', ':6.2f')
-
-        progress = ProgressMeter(
-            len(loader),
-            [batch_time, losses, top1, top5],
-            prefix='Novel Val: ')
-
-        with torch.no_grad():
-            end = time.time()
-            size = 0
-            for j, images in enumerate(loader):
-                images = images.cuda(non_blocking=True)
-                target = torch.ones(len(images), dtype=torch.long).cuda(non_blocking=True) * label_mapping[kprime]
-                _, features = backbone(images)
-                scores = features @ W.transpose(0,1)
-                loss = criterion(scores, target)
-                
-                # update losses
-                losses.update(loss.item(), images.size(0))
-                
-                acc_alt = min(5, scores.shape[1])
-                
-#                 if scores.shape[1] <= 5:
-#                     acc1 = accuracy(scores, target)
-#                     top1.update(acc1[0], images.size(0))
-#                     ipdb.set_trace()
-#                     top5.update(tensor(100., device='cuda:0'), images.size(0))
-#                 else:
-                acc1, acc5 = accuracy(scores, target, topk=(1, acc_alt))
-                top1.update(acc1[0], images.size(0))
-                top5.update(acc5[0], images.size(0))
-                
-#                 # if there is only one novel class
-#                 if scores.shape[1] == 1:
-#                     top1.update(100., images.size(0))
-#                     top5.update(100., images.size(0))
-#                 elif scores.shape[1] <= 5:
-#                     acc1 = accuracy(scores, target, topk=(1,))
-#                     top1.update(acc1[0].item(), images.size(0))
-#                     top5.update(100., images.size(0))
-#                 else:
-#                     acc1, acc5 = accuracy(scores, target, topk=(1,5))
-#                     top1.update(acc1[0], images.size(0))
-#                     top5.update(acc5[0], images.size(0))
-
-                batch_time.update(time.time() - end)
-                end = time.time()
-                
-                size += len(images)
-                
-                if verbose and j % args.print_freq == 0:
-                    progress.display(j)
-                    #         ipdb.set_trace()
-        top1_forall.update(top1.avg.item(), size)
-        
-        if verbose:
-            print(' * NOVEL {kprime}: Acc@1 {top1.avg:.3f} Acc@5 {top5.avg:.3f}'
-                  .format(top1=top1, top5=top5, kprime=kprime))
-    if verbose: 
-        print(' * NOVEL: Acc@1 {top1_forall.avg:.3f}'
-              .format(top1_forall=top1_forall))
-        
-    return(top1_forall.avg)
-
-def validate(base_val_loader, novel_val_loaders, backbone, w_kprimes,
-             base_classifier_weights, criterion, mapping_with_base,
-             mapping_novel_only, epoch, args, writer, mode, verbose):
-    
-    global total_steps
-    
-    wkprimes =  w_kprimes[0] if len(w_kprimes)==1 else torch.stack([w.squeeze(0) for w in w_kprimes])
-    W = torch.cat((base_classifier_weights, wkprimes), dim=0)
-    
-    # if mode is val this method is called multiple times for different set of
-    # wkprimes, thus verbose is set to false
-
-    if verbose:
-        print("===Base class evaluation with base classifier weights only===")
-        base_only = get_base_evaluation(base_val_loader, backbone, 
-                                        base_classifier_weights, criterion, args, 
-                                        verbose)
-    if verbose:
-        print("===Base class evaluation with base AND novel classifier weights===")
-        base_both = get_base_evaluation(base_val_loader, backbone, W, criterion, 
-                                        args, verbose)
-    if verbose:
-        print("===Novel class evaluation with base AND novel classifier weights===")
-        novel_both = get_novel_evaluation(novel_val_loaders, mapping_with_base, 
-                                          backbone, W, criterion, args, verbose)
-    if verbose:
-        print("===Novel class evaluation with novel classifier weights only===")
-        novel_only = get_novel_evaluation(novel_val_loaders, mapping_novel_only, 
-                                          backbone, wkprimes, criterion, args, verbose)
-        
-    acc1 = (novel_both + base_both)/2
-    if verbose:
-        print("===Average of novel and base scores with base AND novel classifier weights===")
-        print(acc1)
-        
-    # save to wandb
-    if mode == "val":
-        return acc1, base_only, base_both, novel_both, novel_only
-    
-    wandb.log({"NovelTrain/Top1/Base-Base-Only": base_only,
-               "NovelTrain/Top1/Base-Both": base_both,
-               "NovelTrain/Top1/Novel-Both": novel_both,
-               "NovelTrain/Top1/Novel-Novel-Only": novel_only,
-               "NovelTrain/Top1/Both": acc1}, step=total_steps)
-    
-    if args.tensorboard:
-        writer.add_scalar('NovelTrain/Top1/Base-Base-Only', base_only, epoch)
-        writer.add_scalar('NovelTrain/Top1/Base-Both', base_both, epoch)
-        writer.add_scalar('NovelTrain/Top1/Novel-Both', novel_both, epoch)
-        writer.add_scalar('NovelTrain/Top1/Novel-Novel-Only', novel_only, epoch)
-        writer.add_scalar('NovelTrain/Top1/Both', acc1, epoch)
-        
-    return acc1
 
 if __name__ == '__main__':
     main()
