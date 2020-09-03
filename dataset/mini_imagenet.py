@@ -113,7 +113,7 @@ class MetaImageNet(ImageNet):
         self.n_queries = args.n_queries
         self.classes = list(self.data.keys())
         self.n_test_runs = args.n_test_runs
-        self.incremental_eval = args.incremental_eval
+        self.eval_mode = args.eval_mode
         self.n_aug_support_samples = args.n_aug_support_samples
         if train_transform is None:
             self.train_transform = transforms.Compose([
@@ -152,18 +152,21 @@ class MetaImageNet(ImageNet):
         support_ys = []
         query_xs = []
         query_ys = []
-        for idx, cls in enumerate(cls_sampled):
+        for idx, cls in enumerate(np.sort(cls_sampled)):
             imgs = np.asarray(self.data[cls]).astype('uint8')
             support_xs_ids_sampled = np.random.choice(range(imgs.shape[0]), self.n_shots, False)
             support_xs.append(imgs[support_xs_ids_sampled])
-            lbl = 64+idx if self.incremental_eval else idx #
+            lbl = idx
+            if self.eval_mode in ["few-shot-incremental"]:
+                lbl = 64+idx
+            if self.eval_mode in ["zero-shot","zero-shot-incremental"]:
+                lbl = cls
             support_ys.append([lbl] * self.n_shots) #
             query_xs_ids = np.setxor1d(np.arange(imgs.shape[0]), support_xs_ids_sampled)
             query_xs_ids = np.random.choice(query_xs_ids, self.n_queries, False)
             query_xs.append(imgs[query_xs_ids])
             query_ys.append([lbl] * query_xs_ids.shape[0]) #
-        support_xs, support_ys, query_xs, query_ys = np.array(support_xs), np.array(support_ys), np.array(
-            query_xs), np.array(query_ys)
+        support_xs, support_ys, query_xs, query_ys = np.array(support_xs), np.array(support_ys), np.array(query_xs), np.array(query_ys)
         num_ways, n_queries_per_way, height, width, channel = query_xs.shape
         query_xs = query_xs.reshape((num_ways * n_queries_per_way, height, width, channel))
         query_ys = query_ys.reshape((num_ways * n_queries_per_way, ))
