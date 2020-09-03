@@ -1,6 +1,11 @@
 import torch
 import torch.nn as nn
 import numpy as np
+import pickle
+from torchnlp.word_to_vector import Vico
+import ipdb
+import os
+import argparse
 
 
 class LabelSmoothing(nn.Module):
@@ -82,3 +87,48 @@ def accuracy(output, target, topk=(1,)):
             correct_k = correct[:k].view(-1).float().sum(0, keepdim=True)
             res.append(correct_k.mul_(100.0 / batch_size))
         return res
+    
+def create_and_save_embeds(opt, vocab):
+    
+    word_embeds = opt.word_embed_path
+    dim = opt.word_embed_size
+    embed_pth = "{0}_dim{1}.pickle".format(opt.dataset, dim)
+    
+    if not os.path.isdir(word_embeds):
+        os.makedirs(word_embeds)
+        
+    words = []
+    for token in vocab:
+        words = words + token.split(' ')
+        
+    embed_pth = os.path.join(word_embeds, embed_pth)
+    if os.path.exists(embed_pth):
+        return
+    else:
+        print("Loading dictionary...")
+        pretrained_embedding = Vico(name='linear',
+                                    dim=dim,
+                                    is_include=lambda w: w in set(words))
+        
+        embeds = []
+        keys = words = pretrained_embedding.token_to_index.keys()
+        for w in keys: 
+            embeds.append(pretrained_embedding[w].numpy())
+        d = dict(zip(keys, embeds))
+        
+        # Pickle the dictionary for later load
+        print("Pickling word embeddings...")
+        with open(embed_pth, 'wb') as f:
+            pickle.dump(d, f)
+        print("Pickled.")
+
+        
+def restricted_float(x):
+    try:
+        x = float(x)
+    except ValueError:
+        raise argparse.ArgumentTypeError("%r not a floating-point literal" % (x,))
+
+    if x < 0.0 or x > 1.0:
+        raise argparse.ArgumentTypeError("%r not in range [0.0, 1.0]"%(x,))
+    return x
