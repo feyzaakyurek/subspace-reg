@@ -6,8 +6,10 @@ from scipy.stats import t
 from tqdm import tqdm
 import ipdb
 import os
+import time
 
 import torch
+import torch.nn as nn
 from sklearn import metrics
 from sklearn.svm import SVC
 from sklearn.linear_model import LogisticRegression
@@ -111,7 +113,154 @@ def zero_shot_incremental_test(net, meta_valloader, base_val_loader, opt, alpha,
             acc_base.append(np.mean(acc_base_))
 #             else:
     return mean_confidence_interval(acc_novel), mean_confidence_interval(acc_base)
-                
+
+            
+def few_shot_language_incremental_test(net, optimizer, criterion, meta_valloader, base_val_loader, opt):
+#     net = net.eval()
+    net = net.train()
+    acc_novel = []
+    acc_base = []
+    label2human_base = base_val_loader.dataset.label2human
+    label2human_novel = meta_valloader.dataset.label2human
+    
+#     with torch.no_grad():
+    for idx, data in enumerate(meta_valloader):
+        support_xs, support_ys, query_xs, query_ys = data
+        batch_size, _, height, width, channel = support_xs.size()
+        support_xs = support_xs.view(-1, height, width, channel)
+        query_xs = query_xs.view(-1, height, width, channel)
+        support_ys = support_ys.view(-1)
+        query_ys = query_ys.view(-1)
+
+        # Get sorted numeric labels, create a mapping that maps the order to actual label
+        unique_sorted_lbls = np.sort(np.unique(support_ys))
+        assert (unique_sorted_lbls == np.sort(np.unique(query_ys))).all()
+        vocab_base = [name for name in label2human_base if name != '']
+        orig2id = dict(zip(unique_sorted_lbls, len(vocab_base) + np.arange(len(unique_sorted_lbls))))
+        query_ys_id = torch.LongTensor([orig2id[y] for y in query_ys.numpy()])
+        support_ys_id = torch.LongTensor([orig2id[y] for y in support_ys.numpy()])
+            
+        # Retrieve the names of the classes in order, based on original integer ids
+        human_label_list = [label2human_novel[y] for y in unique_sorted_lbls] # TODO: are you sure?
+
+        # Create the language classifier which uses only novel class names' embeddings
+        dim = opt.word_embed_size
+        embed_pth = os.path.join(opt.word_embed_path, "{0}_dim{1}.pickle".format(opt.dataset, dim))
+        dummy_classifier = LangLinearClassifier(human_label_list, embed_pth, dim=dim, cdim=640,  
+                                          bias=opt.lang_classifier_bias, verbose=False)
+        dummy_classifier = dummy_classifier.cuda()
+
+        # Update the trained classifier of the network to accommodate for the new classes
+        classifier = net.classifier
+        classifier.embed = nn.Parameter(torch.cat([classifier.embed, dummy_classifier.embed], 0),
+                                        requires_grad=False) # TODO:CHECK DIM.
+        
+        # Validate before training.
+        test_acc, test_acc_top5, test_loss = validate_fine_tune(query_xs, query_ys_id, net, criterion, opt)
+        
+        # Evaluate base samples with the updated network
+        acc_base = eval_base(net, base_val_loader, criterion)
+
+        print('{:25} {:.4f}\n'.format("Base incremental acc:",acc_base))
+        
+        # routine: fine-tuning for novel classes
+        for epoch in range(1, opt.novel_epochs + 1):
+            train_acc, train_loss = fine_tune_novel(epoch, support_xs, support_ys_id, net, criterion, optimizer, opt)
+            test_acc, test_acc_top5, test_loss = validate_fine_tune(query_xs, query_ys_id, net, criterion, opt)
+
+        # Evaluate base samples with the updated network
+        acc_base = eval_base(net, base_val_loader, criterion)
+
+        print('\n{:25} {:}\n'
+              '{:25} {:}\n'
+              '{:25} {:}\n'
+              '{:25} {:.4f}\n'
+              '{:25} {:.4f}'.format(
+                  "Novel classes are:",
+                  unique_sorted_lbls, 
+                  "Human labels are:",
+                  human_label_list, 
+                  "Novel training epochs:",
+                  opt.novel_epochs, 
+                  "Novel incremental acc:",
+                  test_acc.item(), 
+                  "Base incremental acc:",
+                  acc_base))
+    
+        exit()
+#             else:
+    return mean_confidence_interval(acc_novel), mean_confidence_interval(acc_base)
+            # Convert numpy
+#             support_features = support_features.detach().cpu().numpy()
+#             query_features = query_features.detach().cpu().numpy()
+#             support_ys = support_ys.view(-1).numpy()
+#             query_ys = query_ys.view(-1).numpy()
+
+def fine_tune_novel(epoch, support_xs, support_ys_id, net, criterion, optimizer, opt):
+    """One epoch training, single batch training."""
+    support_xs = support_xs.float()
+    if torch.cuda.is_available():
+        support_xs = support_xs.cuda()
+        support_ys_id = support_ys_id.cuda()
+        
+    # Compute output
+    output = net(support_xs) # or query_xs
+    loss = criterion(output, support_ys_id)
+    acc1, acc5 = accuracy(output, support_ys_id, topk=(1,5))
+
+    # Train
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()    
+    
+    print('=======Novel Epoch {}=======\n'
+          'Train\t'
+          'Loss {:10.4f}\t'
+          'Acc@1 {:10.3f}\t'
+          'Acc@5 {:10.3f}'.format(
+           epoch, loss.item(), acc1[0], acc5[0]))
+    return acc1[0], loss.item() 
+    
+def validate_fine_tune(query_xs, query_ys_id, net, criterion, opt):
+    net.eval()
+    with torch.no_grad():
+        query_xs = query_xs.float()
+        if torch.cuda.is_available():
+            query_xs = query_xs.cuda()
+            query_ys_id = query_ys_id.cuda()
+            
+            # compute output
+            output = net(query_xs)
+            loss = criterion(output, query_ys_id)
+            
+            # measure accuracy and record loss
+            acc1, acc5 = accuracy(output, query_ys_id, topk=(1, 5))
+            
+            print('Test \t'
+                  'Loss {:10.4f}\t'
+                  'Acc@1 {:10.3f}\t'
+                  'Acc@5 {:10.3f}'.format(
+                   loss.item(), acc1[0], acc5[0]))
+    return acc1[0], acc5[0], loss.item()
+
+def eval_base(net, base_val_loader, criterion):
+        
+    acc_base_ = []
+    net.eval()
+    with torch.no_grad():
+        for idb, (input, target, _) in enumerate(base_val_loader):
+            input = input.float()
+            if torch.cuda.is_available():
+                input = input.cuda()
+                target = target.cuda()
+
+            output = net(input)
+            loss = criterion(output, target)
+
+            acc1, acc5 = accuracy(output, target, topk=(1, 5))
+            acc_base_.append(acc1[0].item())
+    return np.mean(acc_base_)
+
 def zero_shot_test(net, loader, opt, use_logit=False, is_norm=True, novel_only=True, **kwargs):
     net = net.eval()
     acc_novel = []
@@ -227,6 +376,8 @@ def incremental_test(net, testloader, val_loader, alpha, use_logit=False, is_nor
             if idx >= 50:
                 return mean_confidence_interval(acc_novel), mean_confidence_interval(acc_base)
 
+
+    
 
 def meta_test(net, testloader, use_logit=True, is_norm=True, classifier='LR'):
     net = net.eval()

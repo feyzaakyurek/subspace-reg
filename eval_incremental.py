@@ -11,6 +11,8 @@ import pickle
 
 import numpy as np
 import torch
+import torch.nn as nn
+import torch.optim as optim
 import torch.backends.cudnn as cudnn
 from torch.utils.data import DataLoader
 
@@ -22,7 +24,7 @@ from dataset.tiered_imagenet import MetaTieredImageNet
 from dataset.cifar import MetaCIFAR100
 from dataset.transform_cfg import transforms_test_options, transforms_list
 
-from eval.meta_eval import meta_test, incremental_test, zero_shot_test, zero_shot_incremental_test
+from eval.meta_eval import meta_test, incremental_test, zero_shot_test, zero_shot_incremental_test, few_shot_language_incremental_test
 from eval.cls_eval import incremental_validate
 from util import create_and_save_embeds, restricted_float
 
@@ -77,7 +79,7 @@ def parse_option():
         parser.add_argument("--inc_alpha", type=restricted_float, default="0.01",
                             help="Alpha is the fraction to multiply base scores with. Inc is increment.")
         
-    if parser.parse_known_args()[0].classifier in ["lang-linear"]:
+    if parser.parse_known_args()[0].classifier in ["lang-linear", "few-shot-language-incremental"]:
         parser.add_argument('--word_embed_size', type=int, default=None, 
                             help='Word embedding classifier')
         parser.add_argument('--word_embed_path', type=str, default="word_embeds",
@@ -87,6 +89,14 @@ def parse_option():
     if parser.parse_known_args()[0].eval_mode == 'zero-shot-incremental':
         parser.add_argument('--num_novel_combs', type=int, default=5, 
                             help='Number of combinations of novel/test classes to evaluate base samples against:)')
+        
+    if parser.parse_known_args()[0].eval_mode == "few-shot-language-incremental":
+        parser.add_argument('--novel_epochs', type=int, default=15, help='number of epochs for novel support set.')
+        parser.add_argument('--learning_rate', type=float, default=0.001, help='learning rate')
+        parser.add_argument('--weight_decay', type=float, default=5e-4, help='weight decay')
+        parser.add_argument('--momentum', type=float, default=0.9, help='momentum')
+        parser.add_argument('--adam', action='store_true', help='use adam optimizer')
+        parser.add_argument('--freeze_backbone', action='store_true', help='freeze backbone while updating classifier.')
 
     opt = parser.parse_args()
 
@@ -273,7 +283,7 @@ def main():
             print('average: {:.4f}'.format((base[0]+novel[0])/2))
                   
         start = time.time()
-        novel,base = zero_shot_incremental_test(model, meta_valloader, base_val_loader, opt, best_alpha) 
+        novel,base = zero_shot_incremental_test(model, meta_testloader, base_test_loader, opt, best_alpha) 
         test_time = time.time() - start   
         print('test_alpha: {0}'.format(best_alpha))
         print('test_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel[0], novel[1], test_time))
@@ -281,9 +291,31 @@ def main():
         print('average: {:.4f}'.format((base[0]+novel[0])/2))
         
     elif opt.eval_mode == "few-shot-language-incremental":
-        raise NotImplementedError
+        assert opt.classifier == "lang-linear"
+        # optimizer
+        if opt.adam:
+            optimizer = torch.optim.Adam(model.parameters(),
+                                         lr=opt.learning_rate,
+                                         weight_decay=0.0005)
+        else:
+            optimizer = optim.SGD(model.parameters(),
+                                  lr=opt.learning_rate,
+                                  momentum=opt.momentum,
+                                  weight_decay=opt.weight_decay) # TODO anything to load from ckpt?
+        criterion = nn.CrossEntropyLoss()
         
-    else:
+        start = time.time()
+        novel = few_shot_language_incremental_test(model, optimizer, criterion, meta_valloader, base_val_loader, opt) 
+        val_time = time.time() - start
+        print('val_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel[0], novel[1], val_time))
+        print('val_score: {:.4f}'.format(novel[0]))
+                  
+        start = time.time()
+        novel = few_shot_language_incremental_test(model, optimizer, criterion, meta_valloader, base_val_loader, opte) 
+        test_time = time.time() - start       
+        print('test_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel[0], novel[1], test_time))
+        
+    elif opt.eval_mode == "few-shot":
         start = time.time()
         val_acc, val_std = meta_test(model, meta_valloader)
         val_time = time.time() - start
@@ -304,7 +336,8 @@ def main():
         test_time = time.time() - start
         print('test_acc_feat: {:.4f}, test_std: {:.4f}, time: {:.1f}'.format(test_acc_feat, test_std_feat, test_time))
 
-
+    else:
+        raise NotImplementedError
 
 
 if __name__ == '__main__':
