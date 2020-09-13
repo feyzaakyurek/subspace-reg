@@ -157,9 +157,12 @@ class MetaImageNet(ImageNet):
             support_xs_ids_sampled = np.random.choice(range(imgs.shape[0]), self.n_shots, False)
             support_xs.append(imgs[support_xs_ids_sampled])
             lbl = idx
-            if self.eval_mode in ["few-shot-incremental"]:
-                lbl = 64+idx
-            if self.eval_mode in ["zero-shot","zero-shot-incremental", "few-shot-language-incremental"]:
+#             if self.eval_mode in ["few-shot-incremental"]:
+#                 lbl = 64+idx
+            if self.eval_mode in ["few-shot-incremental",
+                                  "zero-shot",
+                                  "zero-shot-incremental", 
+                                  "few-shot-language-incremental"]:
                 lbl = cls
             support_ys.append([lbl] * self.n_shots) #
             query_xs_ids = np.setxor1d(np.arange(imgs.shape[0]), support_xs_ids_sampled)

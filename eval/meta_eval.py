@@ -325,6 +325,8 @@ def incremental_test(net, testloader, val_loader, alpha, use_logit=False, is_nor
     net = net.eval()
     acc_novel = []
     acc_base = []
+    label2human_base = base_val_loader.dataset.label2human
+    label2human_novel = meta_valloader.dataset.label2human
     
     assert classifier == 'LR' 
     with torch.no_grad():
@@ -335,6 +337,8 @@ def incremental_test(net, testloader, val_loader, alpha, use_logit=False, is_nor
             batch_size, _, height, width, channel = support_xs.size()
             support_xs = support_xs.view(-1, height, width, channel)
             query_xs = query_xs.view(-1, height, width, channel)
+            support_ys = support_ys.view(-1)
+            query_ys = query_ys.view(-1)
 
             if use_logit:
                 support_features = net(support_xs).view(support_xs.size(0), -1)
@@ -348,16 +352,24 @@ def incremental_test(net, testloader, val_loader, alpha, use_logit=False, is_nor
             if is_norm:
                 support_features = normalize(support_features)
                 query_features = normalize(query_features)
+                
+            # Get sorted numeric labels, create a mapping that maps the order to actual label
+            unique_sorted_lbls = np.sort(np.unique(support_ys))
+            assert (unique_sorted_lbls == np.sort(np.unique(query_ys))).all()
+            vocab_base = [name for name in label2human_base if name != '']
+            orig2id = dict(zip(unique_sorted_lbls, len(vocab_base) + np.arange(len(unique_sorted_lbls))))
+            query_ys_id = torch.LongTensor([orig2id[y] for y in query_ys.numpy()])
+            support_ys_id = torch.LongTensor([orig2id[y] for y in support_ys.numpy()])
 
             # Convert numpy
             support_features = support_features.detach().cpu().numpy()
             query_features = query_features.detach().cpu().numpy()
-            support_ys = support_ys.view(-1).numpy()
-            query_ys = query_ys.view(-1).numpy()
+#             support_ys = support_ys.view(-1).numpy()
+#             query_ys = query_ys.view(-1).numpy()
 
             # Fit LR
             clf = LogisticRegression(random_state=0, solver='lbfgs', max_iter=1000, multi_class='multinomial')
-            clf.fit(support_features, support_ys)
+            clf.fit(support_features, support_ys_id)
 
             # Prediction scores for novel query samples #TODO: support features are normalized??
             query_ys_pred_scores = np.concatenate([alpha * query_features, 
@@ -380,7 +392,7 @@ def incremental_test(net, testloader, val_loader, alpha, use_logit=False, is_nor
                 acc_base_.append(metrics.accuracy_score(base_query_ys_pred, target))
                     
             acc_base.append(np.mean(acc_base_))
-            acc_novel.append(metrics.accuracy_score(query_ys, query_ys_pred))
+            acc_novel.append(metrics.accuracy_score(query_ys_id, query_ys_pred))
             
             if idx >= 50:
                 return mean_confidence_interval(acc_novel), mean_confidence_interval(acc_base)
