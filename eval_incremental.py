@@ -86,7 +86,7 @@ def parse_option():
                             help='Where to store word embeds pickles for dataset.')
         parser.add_argument('--lang_classifier_bias', action='store_true', 
                             help='Use of bias in lang classifier.')
-    if parser.parse_known_args()[0].eval_mode == 'zero-shot-incremental':
+    if parser.parse_known_args()[0].eval_mode in ['zero-shot-incremental', 'few-shot-language-incremental']:
         parser.add_argument('--num_novel_combs', type=int, default=5, 
                             help='Number of combinations of novel/test classes to evaluate base samples against:)')
         
@@ -305,15 +305,16 @@ def main():
         criterion = nn.CrossEntropyLoss()
         
         start = time.time()
-        novel = few_shot_language_incremental_test(model, optimizer, criterion, meta_valloader, base_val_loader, opt) 
+        novel, base = few_shot_language_incremental_test(model, ckpt, optimizer, criterion, meta_valloader, base_val_loader, opt) 
         val_time = time.time() - start
         print('val_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel[0], novel[1], val_time))
-        print('val_score: {:.4f}'.format(novel[0]))
+        print('val_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base[0], base[1], val_time))
                   
         start = time.time()
-        novel = few_shot_language_incremental_test(model, optimizer, criterion, meta_valloader, base_val_loader, opte) 
+        novel, base = few_shot_language_incremental_test(model, ckpt, optimizer, criterion, meta_testloader, base_test_loader, opt) 
         test_time = time.time() - start       
         print('test_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel[0], novel[1], test_time))
+        print('test_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base[0], base[1], test_time))
         
     elif opt.eval_mode == "few-shot":
         start = time.time()

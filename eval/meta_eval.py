@@ -7,6 +7,7 @@ from tqdm import tqdm
 import ipdb
 import os
 import time
+import copy
 
 import torch
 import torch.nn as nn
@@ -115,9 +116,10 @@ def zero_shot_incremental_test(net, meta_valloader, base_val_loader, opt, alpha,
     return mean_confidence_interval(acc_novel), mean_confidence_interval(acc_base)
 
             
-def few_shot_language_incremental_test(net, optimizer, criterion, meta_valloader, base_val_loader, opt):
+def few_shot_language_incremental_test(net, ckpt, optimizer, criterion, meta_valloader, base_val_loader, opt):
 #     net = net.eval()
-    net = net.train()
+#     net_orig = copy.deepcopy(net)
+#     net = net.train()
     acc_novel = []
     acc_base = []
     label2human_base = base_val_loader.dataset.label2human
@@ -131,6 +133,7 @@ def few_shot_language_incremental_test(net, optimizer, criterion, meta_valloader
         query_xs = query_xs.view(-1, height, width, channel)
         support_ys = support_ys.view(-1)
         query_ys = query_ys.view(-1)
+        print("Reloading model...")
 
         # Get sorted numeric labels, create a mapping that maps the order to actual label
         unique_sorted_lbls = np.sort(np.unique(support_ys))
@@ -139,6 +142,15 @@ def few_shot_language_incremental_test(net, optimizer, criterion, meta_valloader
         orig2id = dict(zip(unique_sorted_lbls, len(vocab_base) + np.arange(len(unique_sorted_lbls))))
         query_ys_id = torch.LongTensor([orig2id[y] for y in query_ys.numpy()])
         support_ys_id = torch.LongTensor([orig2id[y] for y in support_ys.numpy()])
+        
+         # Small hack: Restore net's original classifier.embed size
+        _, dim = net.classifier.embed.size()
+        net.classifier.embed = nn.Parameter(torch.Tensor(len(vocab_base),dim), requires_grad=False)
+        net.load_state_dict(ckpt['model'])
+        
+        # Send to cuda
+        net = net.cuda()
+        net = net.train()
             
         # Retrieve the names of the classes in order, based on original integer ids
         human_label_list = [label2human_novel[y] for y in unique_sorted_lbls] # TODO: are you sure?
@@ -157,20 +169,22 @@ def few_shot_language_incremental_test(net, optimizer, criterion, meta_valloader
         
         # Validate before training.
         test_acc, test_acc_top5, test_loss = validate_fine_tune(query_xs, query_ys_id, net, criterion, opt)
+        print('{:25} {:.4f}\n'.format("Novel incremental acc before fine-tune:",test_acc.item()))
         
         # Evaluate base samples with the updated network
-        acc_base = eval_base(net, base_val_loader, criterion)
-
-        print('{:25} {:.4f}\n'.format("Base incremental acc:",acc_base))
+        acc_base_ = eval_base(net, base_val_loader, criterion)
+        print('{:25} {:.4f}\n'.format("Base incremental acc before fine-tune:",acc_base_))
         
         # routine: fine-tuning for novel classes
         for epoch in range(1, opt.novel_epochs + 1):
             train_acc, train_loss = fine_tune_novel(epoch, support_xs, support_ys_id, net, criterion, optimizer, opt)
             test_acc, test_acc_top5, test_loss = validate_fine_tune(query_xs, query_ys_id, net, criterion, opt)
-
+        acc_novel.append(test_acc.item())
+        
         # Evaluate base samples with the updated network
-        acc_base = eval_base(net, base_val_loader, criterion)
-
+        acc_base_ = eval_base(net, base_val_loader, criterion)
+        acc_base.append(acc_base_)
+        
         print('\n{:25} {:}\n'
               '{:25} {:}\n'
               '{:25} {:}\n'
@@ -185,16 +199,11 @@ def few_shot_language_incremental_test(net, optimizer, criterion, meta_valloader
                   "Novel incremental acc:",
                   test_acc.item(), 
                   "Base incremental acc:",
-                  acc_base))
+                  acc_base_))
     
-        exit()
-#             else:
-    return mean_confidence_interval(acc_novel), mean_confidence_interval(acc_base)
-            # Convert numpy
-#             support_features = support_features.detach().cpu().numpy()
-#             query_features = query_features.detach().cpu().numpy()
-#             support_ys = support_ys.view(-1).numpy()
-#             query_ys = query_ys.view(-1).numpy()
+        if idx >= opt.num_novel_combs:
+            return mean_confidence_interval(acc_novel), mean_confidence_interval(acc_base)
+
 
 def fine_tune_novel(epoch, support_xs, support_ys_id, net, criterion, optimizer, opt):
     """One epoch training, single batch training."""
