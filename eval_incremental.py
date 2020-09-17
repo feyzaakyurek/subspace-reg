@@ -29,8 +29,8 @@ from eval.cls_eval import incremental_validate
 from util import create_and_save_embeds, restricted_float
 
 
-# import wandb
-# wandb.init(project="rfs")
+import wandb
+run = wandb.init(project="lil")
 
 def parse_option():
 
@@ -71,7 +71,7 @@ def parse_option():
     parser.add_argument('--classifier', type=str, 
                         choices=['linear', 'lang-linear'])
     
-    if parser.parse_known_args()[0].eval_mode in ["incremental","zero-shot-incremental"]:
+    if parser.parse_known_args()[0].eval_mode in ["zero-shot-incremental","few-shot-incremental"]:
         parser.add_argument("--start_alpha", type=restricted_float, default="0.7",
                             help="Alpha is the fraction to multiply base scores with. Start is the beginning of the range to try.")
         parser.add_argument("--end_alpha", type=restricted_float, default="0.9",
@@ -79,7 +79,7 @@ def parse_option():
         parser.add_argument("--inc_alpha", type=restricted_float, default="0.01",
                             help="Alpha is the fraction to multiply base scores with. Inc is increment.")
         
-    if parser.parse_known_args()[0].classifier in ["lang-linear", "few-shot-language-incremental"]:
+    if parser.parse_known_args()[0].classifier in ["lang-linear"]:
         parser.add_argument('--word_embed_size', type=int, default=None, 
                             help='Word embedding classifier')
         parser.add_argument('--word_embed_path', type=str, default="word_embeds",
@@ -97,6 +97,8 @@ def parse_option():
         parser.add_argument('--momentum', type=float, default=0.9, help='momentum')
         parser.add_argument('--adam', action='store_true', help='use adam optimizer')
         parser.add_argument('--freeze_backbone', action='store_true', help='freeze backbone while updating classifier.')
+        parser.add_argument('--lmbd_reg_transform_w',  type=float, default=None, help='learning rate')
+        parser.add_argument('--target_train_loss',  type=float, default=0.8, help='learning rate')
 
     opt = parser.parse_args()
 
@@ -118,6 +120,7 @@ def parse_option():
 def main():
 
     opt = parse_option()
+    run.config.update(opt)
 
     # test loader
     args = opt
@@ -131,23 +134,27 @@ def main():
         
         # load base evaluation dataset
         base_val_loader = DataLoader(ImageNet(args=opt, partition='val', transform=test_trans),
-                                     batch_size=opt.test_base_batch_size // 2, shuffle=True, drop_last=False,
+                                     batch_size=opt.test_base_batch_size // 2, 
+                                     shuffle=False, 
+                                     drop_last=False,
                                      num_workers=opt.num_workers // 2)
         
         base_test_loader = DataLoader(ImageNet(args=opt, partition='test', transform=test_trans),
-                                      batch_size=opt.test_base_batch_size // 2, shuffle=False, drop_last=False,
+                                      batch_size=opt.test_base_batch_size // 2, 
+                                      shuffle=False, 
+                                      drop_last=False,
                                       num_workers=opt.num_workers // 2)
         
         meta_testloader = DataLoader(MetaImageNet(args=opt, partition='test',
                                                   train_transform=train_trans,
                                                   test_transform=test_trans,
-                                                  fix_seed=False),
+                                                  fix_seed=True),
                                      batch_size=opt.test_batch_size, shuffle=False, drop_last=False,
                                      num_workers=opt.num_workers)
         meta_valloader = DataLoader(MetaImageNet(args=opt, partition='val',
                                                  train_transform=train_trans,
                                                  test_transform=test_trans,
-                                                 fix_seed=False),
+                                                 fix_seed=True),
                                     batch_size=opt.test_batch_size, shuffle=False, drop_last=False,
                                     num_workers=opt.num_workers)
         if opt.use_trainval:
@@ -220,7 +227,7 @@ def main():
         model = model.cuda()
         cudnn.benchmark = True
 
-#     wandb.watch(model)
+    run.watch(model)
     
     # evaluation
         
@@ -230,7 +237,7 @@ def main():
         for alpha in np.arange(opt.start_alpha,opt.end_alpha,opt.inc_alpha):
             start = time.time()
             novel, base = incremental_test(model, meta_valloader, base_val_loader, 
-                                               alpha, use_logit=False)
+                                               alpha, use_logit=True, is_norm=True)
             val_time = time.time() - start
             avg_score = (base[0]+novel[0])/2
             if avg_score > best_score:
@@ -242,7 +249,7 @@ def main():
             print('average: {:.4f}'.format((base[0]+novel[0])/2))
                 
         start = time.time()
-        novel, base = incremental_test(model, meta_testloader, base_test_loader, best_alpha, use_logit=True)
+        novel, base = incremental_test(model, meta_testloader, base_test_loader, best_alpha, use_logit=True, is_norm=True)
         test_time = time.time() - start
         avg_test_score = (base[0]+novel[0])/2
         print('test_alpha: {0}'.format(best_alpha))
@@ -254,20 +261,20 @@ def main():
     elif opt.eval_mode == "zero-shot":
         assert opt.classifier == "lang-linear"
         start = time.time()
-        novel = zero_shot_test(model, meta_valloader, opt, use_logit=False) 
+        novel = zero_shot_test(model, meta_valloader, opt, is_norm=False) 
         val_time = time.time() - start
         print('val_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel[0], novel[1], val_time))
         print('val_score: {:.4f}'.format(novel[0]))
                   
         start = time.time()
-        novel = zero_shot_test(model, meta_testloader, opt, is_norm=False, use_logit=False) 
+        novel = zero_shot_test(model, meta_testloader, opt, is_norm=False) 
         test_time = time.time() - start       
         print('test_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel[0], novel[1], test_time))
         print('test_score: {:.4f}'.format(novel[0]))
          
     elif opt.eval_mode == "zero-shot-incremental":
         assert opt.classifier == "lang-linear"
-        best_alpha = opt.start_alpha
+        best_alpha = 0.14 #opt.start_alpha
         best_score = 0.0
         for alpha in np.arange(opt.start_alpha,opt.end_alpha,opt.inc_alpha):
             start = time.time()
@@ -280,15 +287,24 @@ def main():
             print('alpha: ', alpha)
             print('val_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel[0], novel[1], val_time))
             print('val_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base[0], base[1], val_time))
-            print('average: {:.4f}'.format((base[0]+novel[0])/2))
+            print('average: {:.4f}'.format(avg_score))
+#             run.log({'alpha': alpha, 
+#                        'val_acc_novel': novel[0],
+#                        'val_acc_base': base[0],
+#                        'val_acc_avg': avg_score})
                   
         start = time.time()
-        novel,base = zero_shot_incremental_test(model, meta_testloader, base_test_loader, opt, best_alpha) 
+        novel, base = zero_shot_incremental_test(model, meta_testloader, base_test_loader, opt, best_alpha) 
         test_time = time.time() - start   
+        avg_score = (base[0]+novel[0])/2
         print('test_alpha: {0}'.format(best_alpha))
         print('test_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel[0], novel[1], test_time))
         print('test_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base[0], base[1], test_time))
-        print('average: {:.4f}'.format((base[0]+novel[0])/2))
+        print('average: {:.4f}'.format(avg_score))
+#         run.log({'alpha': best_alpha, 
+#                    'test_acc_novel': novel[0],
+#                    'test_acc_base': base[0],
+#                    'test_acc_avg': avg_score})
         
     elif opt.eval_mode == "few-shot-language-incremental":
         assert opt.classifier == "lang-linear"
@@ -305,16 +321,28 @@ def main():
         criterion = nn.CrossEntropyLoss()
         
         start = time.time()
-        novel, base = few_shot_language_incremental_test(model, ckpt, optimizer, criterion, meta_valloader, base_val_loader, opt) 
+        opt.split = "val"
+        novel, base = few_shot_language_incremental_test(model, ckpt, optimizer, criterion, meta_valloader, base_val_loader, opt, run) 
         val_time = time.time() - start
+        avg_score = (base[0]+novel[0])/2
         print('val_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel[0], novel[1], val_time))
         print('val_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base[0], base[1], val_time))
+        run.log({
+           'val_acc_novel_avg': novel[0],
+           'val_acc_base_avg': base[0],
+           'val_acc_avg_both': avg_score})
                   
         start = time.time()
-        novel, base = few_shot_language_incremental_test(model, ckpt, optimizer, criterion, meta_testloader, base_test_loader, opt) 
+        opt.split = "test"
+        novel, base = few_shot_language_incremental_test(model, ckpt, optimizer, criterion, meta_testloader, base_test_loader, opt, run) 
         test_time = time.time() - start       
+        avg_score = (base[0]+novel[0])/2
         print('test_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel[0], novel[1], test_time))
         print('test_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base[0], base[1], test_time))
+        run.log({
+           'test_acc_novel_avg': novel[0],
+           'test_acc_base_avg': base[0],
+           'test_acc_avg_both': avg_score})
         
     elif opt.eval_mode == "few-shot":
         start = time.time()

@@ -18,6 +18,7 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.ensemble import RandomForestClassifier
 from .util import accuracy
 from models.resnet_language import LangLinearClassifier
+import wandb
 
 
 def mean_confidence_interval(data, confidence=0.95):
@@ -116,16 +117,12 @@ def zero_shot_incremental_test(net, meta_valloader, base_val_loader, opt, alpha,
     return mean_confidence_interval(acc_novel), mean_confidence_interval(acc_base)
 
             
-def few_shot_language_incremental_test(net, ckpt, optimizer, criterion, meta_valloader, base_val_loader, opt):
-#     net = net.eval()
-#     net_orig = copy.deepcopy(net)
-#     net = net.train()
+def few_shot_language_incremental_test(net, ckpt, optimizer, criterion, meta_valloader, base_val_loader, opt, run):
     acc_novel = []
     acc_base = []
     label2human_base = base_val_loader.dataset.label2human
     label2human_novel = meta_valloader.dataset.label2human
     
-#     with torch.no_grad():
     for idx, data in enumerate(meta_valloader):
         support_xs, support_ys, query_xs, query_ys = data
         batch_size, _, height, width, channel = support_xs.size()
@@ -151,6 +148,9 @@ def few_shot_language_incremental_test(net, ckpt, optimizer, criterion, meta_val
         # Send to cuda
         net = net.cuda()
         net = net.train()
+        
+        # Freeze backbone except the classifier
+        freeze_backbone_weights(net, opt)
             
         # Retrieve the names of the classes in order, based on original integer ids
         human_label_list = [label2human_novel[y] for y in unique_sorted_lbls] # TODO: are you sure?
@@ -175,19 +175,33 @@ def few_shot_language_incremental_test(net, ckpt, optimizer, criterion, meta_val
         acc_base_ = eval_base(net, base_val_loader, criterion)
         print('{:25} {:.4f}\n'.format("Base incremental acc before fine-tune:",acc_base_))
         
+        # Retrieve original transform_W if regularization
+#         orig_transform_W = ckpt['model']['classifier.transform_W'] if opt.lmbd_reg_transform_w else None
+#         ipdb.set_trace()
+        embed = ckpt['model']['classifier.embed']
+        trns = ckpt['model']['classifier.transform_W']
+        orig_classifier_weights = embed @ trns if opt.lmbd_reg_transform_w else None
+        
         # routine: fine-tuning for novel classes
-        for epoch in range(1, opt.novel_epochs + 1):
-            train_acc, train_loss = fine_tune_novel(epoch, support_xs, support_ys_id, net, criterion, optimizer, opt)
+        train_loss = 15
+        epoch = 1
+        while train_loss > opt.target_train_loss or epoch < opt.novel_epochs + 1:
+#         for epoch in range(1, opt.novel_epochs + 1):
+            train_acc, train_loss = fine_tune_novel(epoch, support_xs, support_ys_id, net, 
+                                                    criterion, optimizer, orig_classifier_weights, opt)
             test_acc, test_acc_top5, test_loss = validate_fine_tune(query_xs, query_ys_id, net, criterion, opt)
+            epoch += 1
         acc_novel.append(test_acc.item())
         
         # Evaluate base samples with the updated network
         acc_base_ = eval_base(net, base_val_loader, criterion)
         acc_base.append(acc_base_)
+        avg_score = (acc_base_ + test_acc.item())/2
         
         print('\n{:25} {:}\n'
               '{:25} {:}\n'
               '{:25} {:}\n'
+              '{:25} {:.4f}\n'
               '{:25} {:.4f}\n'
               '{:25} {:.4f}'.format(
                   "Novel classes are:",
@@ -195,17 +209,23 @@ def few_shot_language_incremental_test(net, ckpt, optimizer, criterion, meta_val
                   "Human labels are:",
                   human_label_list, 
                   "Novel training epochs:",
-                  opt.novel_epochs, 
+                  epoch-1, 
                   "Novel incremental acc:",
                   test_acc.item(), 
                   "Base incremental acc:",
-                  acc_base_))
+                  acc_base_,
+                  "Average:",
+                  avg_score))
+        run.log({'idx':idx, 
+                 "{}_novel_acc".format(opt.split):test_acc.item(), 
+                 "{}_base_acc".format(opt.split):acc_base_, 
+                 "{}_average".format(opt.split):avg_score})
     
-        if idx >= opt.num_novel_combs:
-            return mean_confidence_interval(acc_novel), mean_confidence_interval(acc_base)
+#         if idx >= opt.num_novel_combs:
+    return mean_confidence_interval(acc_novel), mean_confidence_interval(acc_base)
 
 
-def fine_tune_novel(epoch, support_xs, support_ys_id, net, criterion, optimizer, opt):
+def fine_tune_novel(epoch, support_xs, support_ys_id, net, criterion, optimizer, orig_classifier_weights, opt):
     """One epoch training, single batch training."""
     support_xs = support_xs.float()
     if torch.cuda.is_available():
@@ -213,8 +233,15 @@ def fine_tune_novel(epoch, support_xs, support_ys_id, net, criterion, optimizer,
         support_ys_id = support_ys_id.cuda()
         
     # Compute output
-    output = net(support_xs) # or query_xs
+    output = net(support_xs)
     loss = criterion(output, support_ys_id)
+#     if opt.lmbd_reg_transform_w is not None:
+#         loss = loss + opt.lmbd_reg_transform_w * torch.norm(net.classifier.transform_W - orig_transform_W)
+
+    if opt.lmbd_reg_transform_w is not None:
+        len_vocab,_ = orig_classifier_weights.size()
+        loss = loss + opt.lmbd_reg_transform_w * torch.norm(net.classifier.weight()[:len_vocab,:] - orig_classifier_weights)
+        
     acc1, acc5 = accuracy(output, support_ys_id, topk=(1,5))
 
     # Train
@@ -270,7 +297,7 @@ def eval_base(net, base_val_loader, criterion):
             acc_base_.append(acc1[0].item())
     return np.mean(acc_base_)
 
-def zero_shot_test(net, loader, opt, use_logit=False, is_norm=True, novel_only=True, **kwargs):
+def zero_shot_test(net, loader, opt, is_norm=True, novel_only=True, **kwargs):
     net = net.eval()
     acc_novel = []
     label2human = loader.dataset.label2human
@@ -321,12 +348,12 @@ def zero_shot_test(net, loader, opt, use_logit=False, is_norm=True, novel_only=T
       
         return mean_confidence_interval(acc_novel)#, mean_confidence_interval(acc_base)
 
-def incremental_test(net, testloader, val_loader, alpha, use_logit=False, is_norm=True, classifier='LR'):
+def incremental_test(net, testloader, val_loader, alpha, use_logit=True, is_norm=True, classifier='LR'):
     net = net.eval()
     acc_novel = []
     acc_base = []
-    label2human_base = base_val_loader.dataset.label2human
-    label2human_novel = meta_valloader.dataset.label2human
+    label2human_base = val_loader.dataset.label2human
+    label2human_novel = testloader.dataset.label2human
     
     assert classifier == 'LR' 
     with torch.no_grad():
@@ -364,8 +391,6 @@ def incremental_test(net, testloader, val_loader, alpha, use_logit=False, is_nor
             # Convert numpy
             support_features = support_features.detach().cpu().numpy()
             query_features = query_features.detach().cpu().numpy()
-#             support_ys = support_ys.view(-1).numpy()
-#             query_ys = query_ys.view(-1).numpy()
 
             # Fit LR
             clf = LogisticRegression(random_state=0, solver='lbfgs', max_iter=1000, multi_class='multinomial')
@@ -394,12 +419,20 @@ def incremental_test(net, testloader, val_loader, alpha, use_logit=False, is_nor
             acc_base.append(np.mean(acc_base_))
             acc_novel.append(metrics.accuracy_score(query_ys_id, query_ys_pred))
             
-            if idx >= 50:
-                return mean_confidence_interval(acc_novel), mean_confidence_interval(acc_base)
+#             if idx >= 50:
+    return mean_confidence_interval(acc_novel), mean_confidence_interval(acc_base)
 
 
-    
+def freeze_backbone_weights(backbone, opt):
+    if opt.freeze_backbone:
+        print("Freezing the backbone.")
+        for name, param in backbone.named_parameters():
+            param.requires_grad = False
+            if name.startswith("classifier.transform"):
+                print("Not frozen ", name)
+                param.requires_grad = True
 
+            
 def meta_test(net, testloader, use_logit=True, is_norm=True, classifier='LR'):
     net = net.eval()
     acc = []
