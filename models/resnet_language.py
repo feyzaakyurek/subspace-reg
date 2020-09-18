@@ -150,6 +150,33 @@ class BasicBlock(nn.Module):
 
         return out
 
+class DescriptionLinearClassifier(nn.Module):
+    def __init__(self, load_embeds, cdim=640):
+        super(DescriptionLinearClassifier, self).__init__()
+        assert os.path.exists(load_embeds)
+        
+        with open(load_embeds, 'rb') as f: 
+            pretrained_embedding = pickle.load(f) # label -> embed
+        
+        l_keys = []
+        l_embeds = []
+        for k,v in pretrained_embedding:
+            l_keys.append(k)
+            l_values.append(v.unsqueeze(0))
+            
+        self.labels = l_keys
+        self.embed = nn.Parameter(torch.cat(l_values, 0), requires_grad=False)
+        dim = self.embed.size()[1]
+        self.transform_W = nn.Parameter(torch.Tensor(dim,cdim), requires_grad=True)
+        nn.init.kaiming_uniform_(self.transform_W, a=math.sqrt(5))
+        
+        def weight(self):
+            return self.embed @ self.transform_W 
+
+        def forward(self, input):
+            return F.linear(input, self.weight()) #TODO: no bias.
+    
+    
 class LangLinearClassifier(nn.Module):
     def __init__(self, vocab,  load_embeds, dim, cdim=640, bias=True, verbose=True):
         super(LangLinearClassifier, self).__init__()
@@ -251,10 +278,16 @@ class ResNet(nn.Module):
             if vocab is None:
                 self.classifier = nn.Linear(640, self.num_classes)
             else:
-                embed_pth = os.path.join(opt.word_embed_path, "{0}_dim{1}.pickle".format(opt.dataset, opt.word_embed_size))
-                self.classifier = LangLinearClassifier(vocab, embed_pth, cdim=640, 
-                                                       dim=opt.word_embed_size, 
-                                                       bias=opt.lang_classifier_bias)
+                if opt.classifier == "lang-linear":
+                    embed_pth = os.path.join(opt.word_embed_path, 
+                                             "{0}_dim{1}.pickle".format(opt.dataset, opt.word_embed_size))
+                    self.classifier = LangLinearClassifier(vocab, embed_pth, cdim=640, 
+                                                           dim=opt.word_embed_size, 
+                                                           bias=opt.lang_classifier_bias)
+                else:
+                    embed_pth = os.path.join(opt.description_embed_path, 
+                                             "{0}_{1}.pickle".format(opt.dataset, opt.desc_embed_model))
+                    self.classifier = DescriptionLinearClassifier(embed_pth)
 
     def _make_layer(self, block, n_block, planes, stride=1, drop_rate=0.0, drop_block=False, block_size=1):
         downsample = None

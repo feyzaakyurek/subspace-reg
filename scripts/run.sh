@@ -13,4 +13,7 @@
 # python eval_fewshot.py --model_path /path/to/student.pth --data_root /path/to/data_root
 
 # supervised pretraining with class labels
-python train_supervised.py --trial pretrain --model_path dumped --tb_path tb --data_root data --classifier lang-linear --word_embed_size 500
+# python train_supervised.py --trial pretrain --model_path dumped  --data_root data --classifier lang-linear --word_embed_size 500
+
+# supervised pretraining with class wordnet descriptions
+python train_supervised.py --trial pretrain --model_path dumped --tb_path tb --data_root data --classifier description-linear --desc_embed_model bert-base-uncased

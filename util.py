@@ -6,6 +6,9 @@ from torchnlp.word_to_vector import Vico
 import ipdb
 import os
 import argparse
+# from transformers import AutoTokenizer, AutoModel
+from transformers import BertTokenizer, BertModel
+from nltk.corpus import wordnet
 
 
 class LabelSmoothing(nn.Module):
@@ -121,7 +124,39 @@ def create_and_save_embeds(opt, vocab):
         with open(embed_pth, 'wb') as f:
             pickle.dump(d, f)
         print("Pickled.")
+        
 
+def create_and_save_descriptions(opt, vocab):
+    
+    if not os.path.isdir(opt.description_embed_path):
+        os.makedirs(opt.description_embed_path)
+ 
+    embed_pth = os.path.join(opt.description_embed_path, 
+                             "{0}_{1}.pickle".format(opt.dataset,opt.desc_embed_model))
+    
+    if os.path.exists(embed_pth):
+        return
+    else:
+#         pth = os.path.join("~/.cache/torch/transformers/", ""
+        print("Creating tokenizer...")
+#         tokenizer = AutoTokenizer.from_pretrained(opt.desc_embed_model)
+        tokenizer = BertTokenizer.from_pretrained(opt.desc_embed_model)
+        print("Initializing {}...".format(opt.desc_embed_model))
+        model = BertModel.from_pretrained(opt.desc_embed_model)                   
+#         model = AutoModel.from_pretrained(opt.desc_embed_model)
+        
+        # Create wordnet
+        defs = [wordnet.synset(v)[0].definition() for v in vocab]
+        inputs = tokenizer(defs, return_tensors="pt")
+        outputs = model(**inputs)
+        ipdb.set_trace()
+        d = dict(zip(vocab, outputs))
+        
+        # Pickle the dictionary for later load
+        print("Pickling description embeddings from {}...".format(opt.desc_embed_model))
+        with open(embed_pth, 'wb') as f:
+            pickle.dump(d, f)
+        print("Pickled.")
         
 def restricted_float(x):
     try:

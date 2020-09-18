@@ -26,7 +26,7 @@ from dataset.tiered_imagenet import TieredImageNet, MetaTieredImageNet
 from dataset.cifar import CIFAR100, MetaCIFAR100
 from dataset.transform_cfg import transforms_options, transforms_list
 
-from util import adjust_learning_rate, accuracy, AverageMeter, create_and_save_embeds
+from util import adjust_learning_rate, accuracy, AverageMeter, create_and_save_embeds, create_and_save_descriptions
 from eval.meta_eval import meta_test
 from eval.cls_eval import validate
 
@@ -84,7 +84,7 @@ def parse_option():
                         help='Size of test batch)')
     
     parser.add_argument('--classifier', type=str, 
-                        choices=['linear', 'lang-linear'])
+                        choices=['linear', 'lang-linear', 'description-linear'])
     parser.add_argument('-t', '--trial', type=str, default='1', help='the experiment id')
     parser.add_argument('--eval_mode', type=str, default=None) # TODO
     
@@ -92,11 +92,12 @@ def parse_option():
         parser.add_argument('--word_embed_size', type=int, default=None, help='Word embedding classifier')
         parser.add_argument('--lang_classifier_bias', action='store_true', help='Use of bias in lang classifier.')
         parser.add_argument('--word_embed_path', type=str, default="word_embeds")
+        
+    if parser.parse_known_args()[0].classifier in ["description-linear"]:
+        parser.add_argument('--description_embed_path', type=str, default="description_embeds")
+        parser.add_argument('--desc_embed_model', type=str, default="bert-base-cased")
     
     opt = parser.parse_args()
-
-    if opt.lang_classifier_bias:
-        assert opt.word_embed_size is not None
         
     if opt.dataset == 'CIFAR-FS' or opt.dataset == 'FC100':
         opt.transform = 'D'
@@ -230,10 +231,15 @@ def main():
     vocab_test = [name for name in meta_testloader.dataset.label2human if name != '']
     vocab_val = [name for name in meta_valloader.dataset.label2human if name != '']
     vocab = vocab_train + vocab_test + vocab_val
-    create_and_save_embeds(opt, vocab)
+        
+    if opt.classifier == "lang-linear":
+        create_and_save_embeds(opt, vocab)
+        
+    if opt.classifier == "description-linear":
+        create_and_save_descriptions(opt, vocab)
 
-    if opt.word_embed_size is not None:
-        vocab = [name for name in train_loader.dataset.label2human if name != '']
+    if opt.classifier == "lang-linear":
+        vocab = vocab_train
     else:
         vocab = None
 
