@@ -6,7 +6,7 @@ import math
 import numpy as np
 import os
 import pickle
-import pdb
+import ipdb
 
 
 def conv3x3(in_planes, out_planes, stride=1):
@@ -149,72 +149,54 @@ class BasicBlock(nn.Module):
                 out = F.dropout(out, p=self.drop_rate, training=self.training, inplace=True)
 
         return out
-
-class DescriptionLinearClassifier(nn.Module):
-    def __init__(self, load_embeds, cdim=640):
-        super(DescriptionLinearClassifier, self).__init__()
-        assert os.path.exists(load_embeds)
-        
-        with open(load_embeds, 'rb') as f: 
-            pretrained_embedding = pickle.load(f) # label -> embed
-        
-        l_keys = []
-        l_embeds = []
-        for k,v in pretrained_embedding:
-            l_keys.append(k)
-            l_values.append(v.unsqueeze(0))
-            
-        self.labels = l_keys
-        self.embed = nn.Parameter(torch.cat(l_values, 0), requires_grad=False)
-        dim = self.embed.size()[1]
-        self.transform_W = nn.Parameter(torch.Tensor(dim,cdim), requires_grad=True)
-        nn.init.kaiming_uniform_(self.transform_W, a=math.sqrt(5))
-        
-        def weight(self):
-            return self.embed @ self.transform_W 
-
-        def forward(self, input):
-            return F.linear(input, self.weight()) #TODO: no bias.
     
     
 class LangLinearClassifier(nn.Module):
-    def __init__(self, vocab,  load_embeds, dim, cdim=640, bias=True, verbose=True):
+    def __init__(self, vocab,  load_embeds, dim, description=False, 
+                 cdim=640, bias=False, verbose=True, multip_fc=0.05):
         super(LangLinearClassifier, self).__init__()
         self.vocab = vocab
         self.dim = dim
+        self.multip_fc = multip_fc
         bound = 1 / math.sqrt(cdim)
+        print(load_embeds)
         assert os.path.exists(load_embeds)
 
-        words = []
-        for token in vocab:
-            words = words + token.split(' ')
-         
-        
+        if description:
+            words = vocab
+        else:
+            words = []
+            for token in vocab:
+                words = words + token.split(' ')
+
         # Load the embed dict pickle
         if verbose:
             print(f"Reading embeddings from {load_embeds}...")    
         with open(load_embeds, 'rb') as f: 
             pretrained_embedding = pickle.load(f)
 
-
         for w in words:
             if w not in pretrained_embedding: print("not found: "+ w)
-
-        # vectors = pretrained_embedding.vectors
-
-        embed_tensor = torch.Tensor(len(vocab),dim)
-        nn.init.uniform_(embed_tensor, -bound, bound)
-
-        for (i,token) in enumerate(vocab):
-            words = token.split(' ')
-            for w in words:
-                try:
-                    embed_tensor[i] += torch.from_numpy(pretrained_embedding[w])
-                except KeyError:
-                    continue
-            embed_tensor[i] /= len(words)
-
-        self.embed = nn.Parameter(embed_tensor * 0.05, requires_grad=False)
+        
+        if description:
+            embeds = []
+            for token in vocab:
+                embeds.append(pretrained_embedding[token].unsqueeze(0))
+            embed_tensor = torch.cat(embeds, 0)
+            dim = embed_tensor.size()[1]
+        else:
+            embed_tensor = torch.Tensor(len(vocab), dim)
+            nn.init.uniform_(embed_tensor, -bound, bound)
+            for (i,token) in enumerate(vocab):
+                words = token.split(' ')
+                for w in words:
+                    try:
+                        embed_tensor[i] += torch.from_numpy(pretrained_embedding[w])
+                    except KeyError:
+                        continue
+                embed_tensor[i] /= len(words)
+        
+        self.embed = nn.Parameter(embed_tensor * multip_fc, requires_grad=False)
 
         self.transform_W = nn.Parameter(torch.Tensor(dim,cdim), requires_grad=True)
         nn.init.kaiming_uniform_(self.transform_W, a=math.sqrt(5))
@@ -280,14 +262,26 @@ class ResNet(nn.Module):
             else:
                 if opt.classifier == "lang-linear":
                     embed_pth = os.path.join(opt.word_embed_path, 
-                                             "{0}_dim{1}.pickle".format(opt.dataset, opt.word_embed_size))
-                    self.classifier = LangLinearClassifier(vocab, embed_pth, cdim=640, 
+                                             "{0}_dim{1}.pickle".format(opt.dataset, 
+                                                                        opt.word_embed_size))
+                    self.classifier = LangLinearClassifier(vocab, 
+                                                           embed_pth, 
+                                                           cdim=640, 
                                                            dim=opt.word_embed_size, 
-                                                           bias=opt.lang_classifier_bias)
+                                                           bias=opt.lang_classifier_bias,
+                                                           multip_fc=opt.multip_fc)
                 else:
                     embed_pth = os.path.join(opt.description_embed_path, 
-                                             "{0}_{1}.pickle".format(opt.dataset, opt.desc_embed_model))
-                    self.classifier = DescriptionLinearClassifier(embed_pth)
+                                             "{0}_{1}_layer{2}.pickle".format(opt.dataset, 
+                                                                              opt.desc_embed_model, 
+                                                                              opt.transformer_layer))
+                    self.classifier = LangLinearClassifier(vocab, 
+                                                           embed_pth, 
+                                                           cdim=640,
+                                                           dim=None, 
+                                                           bias=opt.lang_classifier_bias,
+                                                           description=True,
+                                                           multip_fc=opt.multip_fc)
 
     def _make_layer(self, block, n_block, planes, stride=1, drop_rate=0.0, drop_block=False, block_size=1):
         downsample = None
