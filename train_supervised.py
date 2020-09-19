@@ -306,7 +306,7 @@ def main():
             logger.log_value('train_loss', train_loss, epoch)
 
         test_acc, test_acc_top5, test_loss = validate(val_loader, model, criterion, opt)
-        wandb.log({"epoch":epoch, "train_acc":train_acc, "train_loss":train_loss, "test_acc":train_acc, "test_acc_top5":test_acc_top5, "test_loss":train_loss})
+        wandb.log({"epoch":epoch, "train_acc":train_acc, "train_loss":train_loss, "test_acc":test_acc, "test_acc_top5":test_acc_top5, "test_loss":test_loss})
         logger.log_value('test_acc', test_acc, epoch)
         logger.log_value('test_acc_top5', test_acc_top5, epoch)
         logger.log_value('test_loss', test_loss, epoch)
