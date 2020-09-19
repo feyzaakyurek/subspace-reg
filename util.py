@@ -2,12 +2,11 @@ import torch
 import torch.nn as nn
 import numpy as np
 import pickle
-from torchnlp.word_to_vector import Vico
+# from torchnlp.word_to_vector import Vico
 import ipdb
 import os
 import argparse
-# from transformers import AutoTokenizer, AutoModel
-from transformers import BertTokenizer, BertModel
+from transformers import AutoTokenizer, AutoModelForMaskedLM
 from nltk.corpus import wordnet
 
 
@@ -137,19 +136,26 @@ def create_and_save_descriptions(opt, vocab):
     if os.path.exists(embed_pth):
         return
     else:
-#         pth = os.path.join("~/.cache/torch/transformers/", ""
         print("Creating tokenizer...")
-#         tokenizer = AutoTokenizer.from_pretrained(opt.desc_embed_model)
-        tokenizer = BertTokenizer.from_pretrained(opt.desc_embed_model)
+        tokenizer = AutoTokenizer.from_pretrained(opt.desc_embed_model)
+#         tokenizer = BertTokenizer.from_pretrained(opt.desc_embed_model)
         print("Initializing {}...".format(opt.desc_embed_model))
-        model = BertModel.from_pretrained(opt.desc_embed_model)                   
-#         model = AutoModel.from_pretrained(opt.desc_embed_model)
-        
+#         model = BertModel.from_pretrained(opt.desc_embed_model)          
+        model = AutoModelForMaskedLM.from_pretrained(opt.desc_embed_model, output_hidden_states=True)
+
         # Create wordnet
-        defs = [wordnet.synset(v)[0].definition() for v in vocab]
-        inputs = tokenizer(defs, return_tensors="pt")
-        outputs = model(**inputs)
-        ipdb.set_trace()
+        defs = [wordnet.synsets(v.replace(" ", "_"))[0].definition() for v in vocab]
+#         defs = torch.cat(defs, 0)
+        embeds = []
+        for d in defs:
+            inputs = tokenizer(d, return_tensors="pt")
+            ipdb.set_trace()
+            outputs = model(**inputs)
+            hidden_states = outputs[1]
+            embed = hidden_states[opt.transformer_layer]
+            
+#             embeds.append(outputs)
+
         d = dict(zip(vocab, outputs))
         
         # Pickle the dictionary for later load
