@@ -11,6 +11,7 @@ import time
 import sys
 
 
+
 import tensorboard_logger as tb_logger
 import torch
 import torch.optim as optim
@@ -30,7 +31,10 @@ from util import adjust_learning_rate, accuracy, AverageMeter, create_and_save_e
 from eval.meta_eval import meta_test
 from eval.cls_eval import validate
 
-import pdb
+import ipdb
+import wandb
+run = wandb.init(project="rfs")
+
 
 def parse_option():
 
@@ -86,16 +90,19 @@ def parse_option():
     parser.add_argument('--classifier', type=str, 
                         choices=['linear', 'lang-linear', 'description-linear'])
     parser.add_argument('-t', '--trial', type=str, default='1', help='the experiment id')
-    parser.add_argument('--eval_mode', type=str, default=None) # TODO
     
     if parser.parse_known_args()[0].classifier in ["lang-linear"]:
         parser.add_argument('--word_embed_size', type=int, default=None, help='Word embedding classifier')
-        parser.add_argument('--lang_classifier_bias', action='store_true', help='Use of bias in lang classifier.')
+        
+    if parser.parse_known_args()[0].classifier in ["lang-linear", "description-linear"]:
         parser.add_argument('--word_embed_path', type=str, default="word_embeds")
+        parser.add_argument('--lang_classifier_bias', action='store_true', help='Use of bias in lang classifier.')
+        parser.add_argument('--multip_fc', type=float, default=0.05)
         
     if parser.parse_known_args()[0].classifier in ["description-linear"]:
         parser.add_argument('--description_embed_path', type=str, default="description_embeds")
         parser.add_argument('--desc_embed_model', type=str, default="bert-base-cased")
+        parser.add_argument('--transformer_layer', type=str, default=6)
     
     opt = parser.parse_args()
         
@@ -238,14 +245,14 @@ def main():
     if opt.classifier == "description-linear":
         create_and_save_descriptions(opt, vocab)
 
-    if opt.classifier == "lang-linear":
+    if opt.classifier in ["lang-linear", "description-linear"]:
         vocab = vocab_train
     else:
         vocab = None
 
     # model
     model = create_model(opt.model, n_cls, opt, vocab=vocab)
-
+    wandb.watch(model)
    # if reload_path == '':
    #     ckpt = torch.load(opt.reload_path)
    #     model.load_state_dict(ckpt['model'])
@@ -299,7 +306,7 @@ def main():
             logger.log_value('train_loss', train_loss, epoch)
 
         test_acc, test_acc_top5, test_loss = validate(val_loader, model, criterion, opt)
-
+        wandb.log({"epoch":epoch, "train_acc":train_acc, "train_loss":train_loss, "test_acc":train_acc, "test_acc_top5":test_acc_top5, "test_loss":train_loss})
         logger.log_value('test_acc', test_acc, epoch)
         logger.log_value('test_acc_top5', test_acc_top5, epoch)
         logger.log_value('test_loss', test_loss, epoch)
@@ -319,7 +326,7 @@ def main():
         'opt': opt,
         'model': model.state_dict() if opt.n_gpu <= 1 else model.module.state_dict(),
     }
-    save_file = os.path.join(opt.save_folder, '{}_last{}.pth'.format(opt.model, opt.lang_classifier_bias))
+    save_file = os.path.join(opt.save_folder, '{}_last.pth'.format(opt.model))
     torch.save(state, save_file)
 
 

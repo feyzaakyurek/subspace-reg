@@ -18,7 +18,7 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.ensemble import RandomForestClassifier
 from .util import accuracy
 from models.resnet_language import LangLinearClassifier
-import wandb
+
 
 
 def mean_confidence_interval(data, confidence=0.95):
@@ -74,7 +74,8 @@ def zero_shot_incremental_test(net, meta_valloader, base_val_loader, opt, alpha,
             
             # Create classifier with base and novel class labels.
             classifier = LangLinearClassifier(vocab, embed_pth, dim=dim, cdim=640,  
-                                              bias=opt.lang_classifier_bias, verbose=False)
+                                              bias=opt.lang_classifier_bias, verbose=False,
+                                              multip_fc=net.classifier.multip_fc)
             
             # Replace the random transformations with the trained ones.
             classifier.transform_W = net.classifier.transform_W
@@ -151,20 +152,43 @@ def few_shot_language_incremental_test(net, ckpt, optimizer, criterion, meta_val
         
         # Freeze backbone except the classifier
         freeze_backbone_weights(net, opt)
-            
+        classifier = net.classifier
+        
         # Retrieve the names of the classes in order, based on original integer ids
         human_label_list = [label2human_novel[y] for y in unique_sorted_lbls] # TODO: are you sure?
+        
+        if opt.classifier == "lang-linear":
+            
+            # Create the language classifier which uses only novel class names' embeddings
+            dim = opt.word_embed_size
+            embed_pth = os.path.join(opt.word_embed_path, "{0}_dim{1}.pickle".format(opt.dataset, dim))
+            dummy_classifier = LangLinearClassifier(human_label_list, 
+                                                    embed_pth, 
+                                                    dim=dim, 
+                                                    cdim=640,  
+                                                    bias=opt.lang_classifier_bias, 
+                                                    verbose=False,
+                                                    multip_fc=classifier.multip_fc)
+            
+        else: # Description linear classifier
+            
+            embed_pth = os.path.join(opt.description_embed_path, 
+                                      "{0}_{1}_layer{2}.pickle".format(opt.dataset, 
+                                                                       opt.desc_embed_model,
+                                                                       opt.transformer_layer))
+            dummy_classifier = LangLinearClassifier(human_label_list, 
+                                                    embed_pth, 
+                                                    cdim=640,
+                                                    dim=None, 
+                                                    bias=opt.lang_classifier_bias,
+                                                    description=True, 
+                                                    verbose=False,
+                                                    multip_fc=classifier.multip_fc)
 
-        # Create the language classifier which uses only novel class names' embeddings
-        dim = opt.word_embed_size
-        embed_pth = os.path.join(opt.word_embed_path, "{0}_dim{1}.pickle".format(opt.dataset, dim))
-        dummy_classifier = LangLinearClassifier(human_label_list, embed_pth, dim=dim, cdim=640,  
-                                          bias=opt.lang_classifier_bias, verbose=False)
-        dummy_classifier = dummy_classifier.cuda()
+        novel_embeds = dummy_classifier.embed.cuda()
 
         # Update the trained classifier of the network to accommodate for the new classes
-        classifier = net.classifier
-        classifier.embed = nn.Parameter(torch.cat([classifier.embed, dummy_classifier.embed], 0),
+        classifier.embed = nn.Parameter(torch.cat([classifier.embed, novel_embeds], 0),
                                         requires_grad=False) # TODO:CHECK DIM.
         
         # Validate before training.
@@ -332,8 +356,13 @@ def zero_shot_test(net, loader, opt, is_norm=True, novel_only=True, **kwargs):
             # Create the language classifier which uses only novel class names' embeddings
             dim = opt.word_embed_size
             embed_pth = os.path.join(opt.word_embed_path, "{0}_dim{1}.pickle".format(opt.dataset, dim))
-            classifier = LangLinearClassifier(human_label_list, embed_pth, dim=dim, cdim=640,  
-                                              bias=opt.lang_classifier_bias, verbose=False)
+            classifier = LangLinearClassifier(human_label_list, 
+                                              embed_pth, 
+                                              dim=dim, 
+                                              cdim=640,  
+                                              bias=opt.lang_classifier_bias, 
+                                              verbose=False, 
+                                              multip_fc=classifier.multip_fc)
             
             # Replace the transforms with the pretrained ones
             classifier.transform_W = net.classifier.transform_W

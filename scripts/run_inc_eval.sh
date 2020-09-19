@@ -12,7 +12,10 @@
 # python eval_incremental.py --model_path dumped/resnet12_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain/resnet12_lastFalse.pth --data_root data --n_shots 5 --eval_mode few-shot-language-incremental --classifier lang-linear --word_embed_size 500 --novel_epochs 14 --learning_rate 0.001 --num_novel_combs 10 --freeze_backbone --lmbd_reg_transform_w 0.01 --target_train_loss 0.6 > few-shot-language-incremental.log
 
 # Incremental few-shot (fine tuning) evaluation with non-biased description classifier -- not ready
-# python eval_incremental.py --model_path dumped/resnet12_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain/resnet12_lastFalse.pth --data_root data --n_shots 5 --eval_mode few-shot-language-incremental --classifier lang-linear --word_embed_size 500 --novel_epochs 14 --learning_rate 0.001 --num_novel_combs 10 --freeze_backbone --lmbd_reg_transform_w 0.01 --target_train_loss 0.6 > few-shot-language-incremental.log
+python eval_incremental.py --model_path dumped/resnet12_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain/resnet12_last.pth --data_root data --n_shots 5 --eval_mode few-shot-language-incremental --classifier description-linear --novel_epochs 14 --learning_rate 0.01 --num_novel_combs 599 --freeze_backbone --lmbd_reg_transform_w 0.01 --target_train_loss 0.7 # > few-shot-language-incremental-desc.log
+
+# Zero shot evaluation with non-biased lang classifier
+# python eval_incremental.py --model_path dumped/resnet12_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain/ckpt_epoch_40.pth --data_root data --n_shots 5 --eval_mode zero-shot --classifier description-linear >> zero-shot.log
 
 # Few-shot-incremental
 # python eval_incremental.py --model_path dumped/resnet12_miniImageNet_linear_classifier/resnet12_last.pth --data_root data --n_shots 5 --eval_mode few-shot-incremental --classifier linear > few-shot-incremental.log

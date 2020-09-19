@@ -26,7 +26,7 @@ from dataset.transform_cfg import transforms_test_options, transforms_list
 
 from eval.meta_eval import meta_test, incremental_test, zero_shot_test, zero_shot_incremental_test, few_shot_language_incremental_test
 from eval.cls_eval import incremental_validate
-from util import create_and_save_embeds, restricted_float
+from util import create_and_save_embeds, restricted_float, create_and_save_descriptions
 
 
 import wandb
@@ -69,7 +69,7 @@ def parse_option():
                         choices=['few-shot', 'few-shot-incremental', 'zero-shot', 
                                  'zero-shot-incremental', 'few-shot-language-incremental'])
     parser.add_argument('--classifier', type=str, 
-                        choices=['linear', 'lang-linear'])
+                        choices=['linear', 'lang-linear', 'description-linear'])
     
     if parser.parse_known_args()[0].eval_mode in ["zero-shot-incremental","few-shot-incremental"]:
         parser.add_argument("--start_alpha", type=restricted_float, default="0.7",
@@ -79,26 +79,35 @@ def parse_option():
         parser.add_argument("--inc_alpha", type=restricted_float, default="0.01",
                             help="Alpha is the fraction to multiply base scores with. Inc is increment.")
         
-    if parser.parse_known_args()[0].classifier in ["lang-linear"]:
+    if parser.parse_known_args()[0].classifier in ["lang-linear", "description-linear"]:
         parser.add_argument('--word_embed_size', type=int, default=None, 
                             help='Word embedding classifier')
         parser.add_argument('--word_embed_path', type=str, default="word_embeds",
                             help='Where to store word embeds pickles for dataset.')
+        
+    if parser.parse_known_args()[0].classifier in ["lang-linear", "description-linear"]:
         parser.add_argument('--lang_classifier_bias', action='store_true', 
                             help='Use of bias in lang classifier.')
+        parser.add_argument('--multip_fc', type=float, default=0.05)
+        
     if parser.parse_known_args()[0].eval_mode in ['zero-shot-incremental', 'few-shot-language-incremental']:
         parser.add_argument('--num_novel_combs', type=int, default=5, 
                             help='Number of combinations of novel/test classes to evaluate base samples against:)')
         
     if parser.parse_known_args()[0].eval_mode == "few-shot-language-incremental":
         parser.add_argument('--novel_epochs', type=int, default=15, help='number of epochs for novel support set.')
-        parser.add_argument('--learning_rate', type=float, default=0.001, help='learning rate')
+        parser.add_argument('--learning_rate', type=float, default=0.01, help='learning rate')
         parser.add_argument('--weight_decay', type=float, default=5e-4, help='weight decay')
         parser.add_argument('--momentum', type=float, default=0.9, help='momentum')
         parser.add_argument('--adam', action='store_true', help='use adam optimizer')
         parser.add_argument('--freeze_backbone', action='store_true', help='freeze backbone while updating classifier.')
         parser.add_argument('--lmbd_reg_transform_w',  type=float, default=None, help='learning rate')
         parser.add_argument('--target_train_loss',  type=float, default=0.8, help='learning rate')
+        
+    if parser.parse_known_args()[0].classifier in ["description-linear"]:
+        parser.add_argument('--description_embed_path', type=str, default="description_embeds")
+        parser.add_argument('--desc_embed_model', type=str, default="bert-base-cased")
+        parser.add_argument('--transformer_layer', type=str, default=6)
 
     opt = parser.parse_args()
 
@@ -207,13 +216,16 @@ def main():
         
 
     # load model
-    if opt.classifier in ["lang-linear"]:
+    if opt.classifier in ["lang-linear", "description-linear"]:
         # Save full dataset vocab if not available
         vocab_train = [name for name in train_loader.dataset.label2human if name != '']
         vocab_test = [name for name in meta_testloader.dataset.label2human if name != '']
         vocab_val = [name for name in meta_valloader.dataset.label2human if name != '']
         vocab_all = vocab_train + vocab_test + vocab_val
-        create_and_save_embeds(opt, vocab_all)
+        if opt.classifier == "description-linear":
+            create_and_save_descriptions(opt, vocab_all)
+        else:
+            create_and_save_embeds(opt, vocab_all)
         vocab = vocab_train
     else:
         vocab = None
@@ -288,10 +300,6 @@ def main():
             print('val_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel[0], novel[1], val_time))
             print('val_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base[0], base[1], val_time))
             print('average: {:.4f}'.format(avg_score))
-#             run.log({'alpha': alpha, 
-#                        'val_acc_novel': novel[0],
-#                        'val_acc_base': base[0],
-#                        'val_acc_avg': avg_score})
                   
         start = time.time()
         novel, base = zero_shot_incremental_test(model, meta_testloader, base_test_loader, opt, best_alpha) 
@@ -301,13 +309,10 @@ def main():
         print('test_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel[0], novel[1], test_time))
         print('test_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base[0], base[1], test_time))
         print('average: {:.4f}'.format(avg_score))
-#         run.log({'alpha': best_alpha, 
-#                    'test_acc_novel': novel[0],
-#                    'test_acc_base': base[0],
-#                    'test_acc_avg': avg_score})
+
         
     elif opt.eval_mode == "few-shot-language-incremental":
-        assert opt.classifier == "lang-linear"
+        assert opt.classifier in ["lang-linear", "description-linear"]
         # optimizer
         if opt.adam:
             optimizer = torch.optim.Adam(model.parameters(),
@@ -322,7 +327,14 @@ def main():
         
         start = time.time()
         opt.split = "val"
-        novel, base = few_shot_language_incremental_test(model, ckpt, optimizer, criterion, meta_valloader, base_val_loader, opt, run) 
+        novel, base = few_shot_language_incremental_test(model, 
+                                                         ckpt, 
+                                                         optimizer, 
+                                                         criterion, 
+                                                         meta_valloader, 
+                                                         base_val_loader, 
+                                                         opt, 
+                                                         run) 
         val_time = time.time() - start
         avg_score = (base[0]+novel[0])/2
         print('val_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel[0], novel[1], val_time))
@@ -334,7 +346,14 @@ def main():
                   
         start = time.time()
         opt.split = "test"
-        novel, base = few_shot_language_incremental_test(model, ckpt, optimizer, criterion, meta_testloader, base_test_loader, opt, run) 
+        novel, base = few_shot_language_incremental_test(model, 
+                                                         ckpt, 
+                                                         optimizer, 
+                                                         criterion, 
+                                                         meta_testloader, 
+                                                         base_test_loader, 
+                                                         opt, 
+                                                         run) 
         test_time = time.time() - start       
         avg_score = (base[0]+novel[0])/2
         print('test_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel[0], novel[1], test_time))
