@@ -321,7 +321,7 @@ def eval_base(net, base_val_loader, criterion):
             acc_base_.append(acc1[0].item())
     return np.mean(acc_base_)
 
-def zero_shot_test(net, loader, opt, is_norm=True, novel_only=True, **kwargs):
+def zero_shot_test(net, loader, opt, is_norm=True, use_logit=False, novel_only=True, **kwargs):
     net = net.eval()
     acc_novel = []
     label2human = loader.dataset.label2human
@@ -353,16 +353,34 @@ def zero_shot_test(net, loader, opt, is_norm=True, novel_only=True, **kwargs):
             # Retrieve the names of the classes in order
             human_label_list = [label2human[y] for y in unique_sorted_lbls] # TODO: are you sure?
             
-            # Create the language classifier which uses only novel class names' embeddings
-            dim = opt.word_embed_size
-            embed_pth = os.path.join(opt.word_embed_path, "{0}_dim{1}.pickle".format(opt.dataset, dim))
-            classifier = LangLinearClassifier(human_label_list, 
-                                              embed_pth, 
-                                              dim=dim, 
-                                              cdim=640,  
-                                              bias=opt.lang_classifier_bias, 
-                                              verbose=False, 
-                                              multip_fc=classifier.multip_fc)
+            if opt.classifier == "lang-linear":
+                
+                # Create the language classifier which uses only novel class names' embeddings
+                dim = opt.word_embed_size
+                embed_pth = os.path.join(opt.word_embed_path, "{0}_dim{1}.pickle".format(opt.dataset, dim))
+                classifier = LangLinearClassifier(human_label_list, 
+                                                  embed_pth, 
+                                                  dim=dim, 
+                                                  cdim=640,  
+                                                  bias=opt.lang_classifier_bias, 
+                                                  verbose=False, 
+                                                  multip_fc=net.classifier.multip_fc)
+
+            else: # Description linear classifier
+
+                embed_pth = os.path.join(opt.description_embed_path, 
+                                          "{0}_{1}_layer{2}.pickle".format(opt.dataset, 
+                                                                           opt.desc_embed_model,
+                                                                           opt.transformer_layer))
+                classifier = LangLinearClassifier(human_label_list, 
+                                                        embed_pth, 
+                                                        cdim=640,
+                                                        dim=None, 
+                                                        bias=opt.lang_classifier_bias,
+                                                        description=True, 
+                                                        verbose=False,
+                                                        multip_fc=net.classifier.multip_fc)
+            
             
             # Replace the transforms with the pretrained ones
             classifier.transform_W = net.classifier.transform_W
@@ -375,7 +393,7 @@ def zero_shot_test(net, loader, opt, is_norm=True, novel_only=True, **kwargs):
             novel_only_ys_pred = np.argmax(novel_only_ys_pred_scores, 1)
             acc_novel.append(metrics.accuracy_score(novel_only_ys_pred, query_ys_id))
       
-        return mean_confidence_interval(acc_novel)#, mean_confidence_interval(acc_base)
+        return mean_confidence_interval(acc_novel)
 
 def incremental_test(net, testloader, val_loader, alpha, use_logit=True, is_norm=True, classifier='LR'):
     net = net.eval()

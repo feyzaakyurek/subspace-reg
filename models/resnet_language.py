@@ -159,7 +159,6 @@ class LangLinearClassifier(nn.Module):
         self.dim = dim
         self.multip_fc = multip_fc
         bound = 1 / math.sqrt(cdim)
-        print(load_embeds)
         assert os.path.exists(load_embeds)
 
         if description:

@@ -271,7 +271,7 @@ def main():
         
     
     elif opt.eval_mode == "zero-shot":
-        assert opt.classifier == "lang-linear"
+        assert opt.classifier in ["lang-linear", "description-linear"]
         start = time.time()
         novel = zero_shot_test(model, meta_valloader, opt, is_norm=False) 
         val_time = time.time() - start
