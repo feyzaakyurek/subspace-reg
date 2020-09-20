@@ -17,6 +17,7 @@ class ImageNet(Dataset):
         self.mean = [120.39586422 / 255.0, 115.59361427 / 255.0, 104.54012653 / 255.0]
         self.std = [70.68188272 / 255.0, 68.27635443 / 255.0, 72.54505529 / 255.0]
         self.normalize = transforms.Normalize(mean=self.mean, std=self.std)
+        self.unnormalize = transforms.Normalize(mean=-np.array(self.mean)/self.std, std=1/np.array(self.std))
         self.pretrain = pretrain
 
         if transform is None:
@@ -40,18 +41,18 @@ class ImageNet(Dataset):
             self.transform = transform
 
         if self.pretrain:
-            self.file_pattern = 'miniImageNet_category_split_train_phase_%s.pickle'           
+            self.file_pattern = 'miniImageNet_category_split_train_phase_%s.pickle'
         else:
-            self.file_pattern = 'miniImageNet_category_split_%s.pickle'           
+            self.file_pattern = 'miniImageNet_category_split_%s.pickle'
         self.data = {}
         with open(os.path.join(self.data_root, self.file_pattern % partition), 'rb') as f:
             data = pickle.load(f, encoding='latin1')
             self.imgs = data['data']
             self.labels = data['labels']
             self.cat2label = data['catname2label']
-            
+
         self.label2human = [""]*100
-        
+
         with open(os.path.join(self.data_root, 'class_labels.txt'), 'r') as f:
             for line in f.readlines():
                 catname, humanname = line.strip().lower().split(' ')
@@ -59,7 +60,7 @@ class ImageNet(Dataset):
                 if catname in self.cat2label:
                     label = self.cat2label[catname]
                     self.label2human[label]= humanname
-                    
+
         self.global_labels = self.labels
         #print(self.global_labels)
         # pre-process for contrastive sampling
@@ -98,13 +99,13 @@ class ImageNet(Dataset):
             neg_idx = np.random.choice(self.cls_negative[target], self.k, replace=replace)
             sample_idx = np.hstack((np.asarray([pos_idx]), neg_idx))
             return img, target, item, sample_idx
-        
+
     def __len__(self):
         return len(self.labels)
 
 
 class MetaImageNet(ImageNet):
-    
+
     def __init__(self, args, partition='train', train_transform=None, test_transform=None, fix_seed=True):
         super(MetaImageNet, self).__init__(args, partition, False)
         self.fix_seed = fix_seed
@@ -161,7 +162,7 @@ class MetaImageNet(ImageNet):
 #                 lbl = 64+idx
             if self.eval_mode in ["few-shot-incremental",
                                   "zero-shot",
-                                  "zero-shot-incremental", 
+                                  "zero-shot-incremental",
                                   "few-shot-language-incremental"]:
                 lbl = cls
             support_ys.append([lbl] * self.n_shots) #
@@ -173,7 +174,7 @@ class MetaImageNet(ImageNet):
         num_ways, n_queries_per_way, height, width, channel = query_xs.shape
         query_xs = query_xs.reshape((num_ways * n_queries_per_way, height, width, channel))
         query_ys = query_ys.reshape((num_ways * n_queries_per_way, ))
-                
+
         support_xs = support_xs.reshape((-1, height, width, channel))
         if self.n_aug_support_samples > 1:
             support_xs = np.tile(support_xs, (self.n_aug_support_samples, 1, 1, 1))
@@ -181,16 +182,16 @@ class MetaImageNet(ImageNet):
         support_xs = np.split(support_xs, support_xs.shape[0], axis=0)
         query_xs = query_xs.reshape((-1, height, width, channel))
         query_xs = np.split(query_xs, query_xs.shape[0], axis=0)
-        
+
         support_xs = torch.stack(list(map(lambda x: self.train_transform(x.squeeze()), support_xs)))
         query_xs = torch.stack(list(map(lambda x: self.test_transform(x.squeeze()), query_xs)))
-      
-        return support_xs, support_ys, query_xs, query_ys      
-        
+
+        return support_xs, support_ys, query_xs, query_ys
+
     def __len__(self):
         return self.n_test_runs
-    
-    
+
+
 if __name__ == '__main__':
     args = lambda x: None
     args.n_ways = 5
@@ -203,7 +204,7 @@ if __name__ == '__main__':
     imagenet = ImageNet(args, 'val')
     print(len(imagenet))
     print(imagenet.__getitem__(500)[0].shape)
-    
+
     metaimagenet = MetaImageNet(args)
     print(len(metaimagenet))
     print(metaimagenet.__getitem__(500)[0].size())
