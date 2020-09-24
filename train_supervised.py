@@ -103,6 +103,9 @@ def parse_option():
         parser.add_argument('--description_embed_path', type=str, default="description_embeds")
         parser.add_argument('--desc_embed_model', type=str, default="bert-base-cased")
         parser.add_argument('--transformer_layer', type=str, default=6)
+        parser.add_argument('--prefix_label', action='store_true', help='append label to the beginning description')
+        
+    parser.add_argument('--eval_mode', type=str, default=None)
     
     opt = parser.parse_args()
         
