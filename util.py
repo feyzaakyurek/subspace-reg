@@ -150,8 +150,9 @@ def create_and_save_descriptions(opt, vocab):
             defs = [wordnet.synsets(v.replace(" ", "_"))[0].definition() for v in vocab]
     #         defs = torch.cat(defs, 0)
             embeds = []
-            for d in defs:
-                inp = tokenizer(d, return_tensors="pt")
+            for i,d in enumerate(defs):
+                inp = v[i]+" "+d if opt.prefix_label else d
+                inp = tokenizer(inp, return_tensors="pt")
                 outputs = model(**inp)
                 hidden_states = outputs[1]
                 embed = torch.mean(hidden_states[opt.transformer_layer], dim=(0,1))
