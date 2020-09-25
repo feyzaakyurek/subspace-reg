@@ -102,7 +102,7 @@ def parse_option():
     if parser.parse_known_args()[0].classifier in ["description-linear"]:
         parser.add_argument('--description_embed_path', type=str, default="description_embeds")
         parser.add_argument('--desc_embed_model', type=str, default="bert-base-cased")
-        parser.add_argument('--transformer_layer', type=str, default=6)
+        parser.add_argument('--transformer_layer', type=int, default=6, help="which layer to use from transformer.w")
         parser.add_argument('--prefix_label', action='store_true', help='append label to the beginning description')
         
     parser.add_argument('--eval_mode', type=str, default=None)
@@ -247,6 +247,7 @@ def main():
         
     if opt.classifier == "description-linear":
         create_and_save_descriptions(opt, vocab)
+        exit()
 
     if opt.classifier in ["lang-linear", "description-linear"]:
         vocab = vocab_train

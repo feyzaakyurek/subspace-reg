@@ -173,9 +173,10 @@ def few_shot_language_incremental_test(net, ckpt, optimizer, criterion, meta_val
         else: # Description linear classifier
             
             embed_pth = os.path.join(opt.description_embed_path, 
-                                      "{0}_{1}_layer{2}.pickle".format(opt.dataset, 
-                                                                       opt.desc_embed_model,
-                                                                       opt.transformer_layer))
+                                     "{0}_{1}_layer{2}_prefix_{3}.pickle".format(opt.dataset,
+                                                                                 opt.desc_embed_model,
+                                                                                 opt.transformer_layer,
+                                                                                 opt.prefix_label))
             dummy_classifier = LangLinearClassifier(human_label_list, 
                                                     embed_pth, 
                                                     cdim=640,
