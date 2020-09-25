@@ -11,7 +11,8 @@ import time
 import sys
 
 
-
+import warnings
+warnings.filterwarnings('ignore',category=FutureWarning)
 import tensorboard_logger as tb_logger
 import torch
 import torch.optim as optim
@@ -32,8 +33,13 @@ from eval.meta_eval import meta_test
 from eval.cls_eval import validate
 
 import ipdb
-import wandb
-run = wandb.init(project="rfs")
+# import wandb
+
+
+
+# os.environ["WANDB_API_KEY"] = "1c6a939ef88d70da594fe947cdd93866d84bee87"
+# os.environ["WANDB_MODE"] = "dryrun"
+# wandb.init(project="rfs")
 
 
 def parse_option():
@@ -247,7 +253,6 @@ def main():
         
     if opt.classifier == "description-linear":
         create_and_save_descriptions(opt, vocab)
-        exit()
 
     if opt.classifier in ["lang-linear", "description-linear"]:
         vocab = vocab_train
@@ -256,7 +261,7 @@ def main():
 
     # model
     model = create_model(opt.model, n_cls, opt, vocab=vocab)
-    wandb.watch(model)
+#     wandb.watch(model)
    # if reload_path == '':
    #     ckpt = torch.load(opt.reload_path)
    #     model.load_state_dict(ckpt['model'])
@@ -310,7 +315,7 @@ def main():
             logger.log_value('train_loss', train_loss, epoch)
 
         test_acc, test_acc_top5, test_loss = validate(val_loader, model, criterion, opt)
-        wandb.log({"epoch":epoch, "train_acc":train_acc, "train_loss":train_loss, "test_acc":test_acc, "test_acc_top5":test_acc_top5, "test_loss":test_loss})
+#         wandb.log({"epoch":epoch, "train_acc":train_acc, "train_loss":train_loss, "test_acc":test_acc, "test_acc_top5":test_acc_top5, "test_loss":test_loss})
         logger.log_value('test_acc', test_acc, epoch)
         logger.log_value('test_acc_top5', test_acc_top5, epoch)
         logger.log_value('test_loss', test_loss, epoch)
