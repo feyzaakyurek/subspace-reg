@@ -6,7 +6,6 @@ import math
 import numpy as np
 import os
 import pickle
-import ipdb
 
 
 def conv3x3(in_planes, out_planes, stride=1):
@@ -268,9 +267,10 @@ class ResNet(nn.Module):
                                                            multip_fc=opt.multip_fc)
                 else:
                     embed_pth = os.path.join(opt.description_embed_path, 
-                                             "{0}_{1}_layer{2}.pickle".format(opt.dataset, 
-                                                                              opt.desc_embed_model, 
-                                                                              opt.transformer_layer))
+                             "{0}_{1}_layer{2}_prefix_{3}.pickle".format(opt.dataset,
+                                                             opt.desc_embed_model,
+                                                             opt.transformer_layer,
+                                                             opt.prefix_label))
                     self.classifier = LangLinearClassifier(vocab, 
                                                            embed_pth, 
                                                            cdim=640,
