@@ -176,14 +176,14 @@ def few_shot_language_incremental_test(net, ckpt, optimizer, criterion, meta_val
                                                     verbose=False,
                                                     multip_fc=classifier.multip_fc)
 
-        else: # Description linear classifier
-
-            embed_pth = os.path.join(opt.description_embed_path,
-                                      "{0}_{1}_layer{2}.pickle".format(opt.dataset,
-                                                                       opt.desc_embed_model,
-                                                                       opt.transformer_layer))
-            dummy_classifier = LangLinearClassifier(human_label_list,
-                                                    embed_pth,
+        else: # Description linear classifier 
+            embed_pth = os.path.join(opt.description_embed_path, 
+                                     "{0}_{1}_layer{2}_prefix_{3}.pickle".format(opt.dataset,
+                                                                                 opt.desc_embed_model,
+                                                                                 opt.transformer_layer,
+                                                                                 opt.prefix_label))
+            dummy_classifier = LangLinearClassifier(human_label_list, 
+                                                    embed_pth, 
                                                     cdim=640,
                                                     dim=None,
                                                     bias=opt.lang_classifier_bias,

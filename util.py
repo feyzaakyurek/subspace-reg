@@ -131,9 +131,10 @@ def create_and_save_descriptions(opt, vocab):
         os.makedirs(opt.description_embed_path)
  
     embed_pth = os.path.join(opt.description_embed_path, 
-                             "{0}_{1}_layer{2}.pickle".format(opt.dataset,
+                             "{0}_{1}_layer{2}_prefix_{3}.pickle".format(opt.dataset,
                                                              opt.desc_embed_model,
-                                                             opt.transformer_layer))
+                                                             opt.transformer_layer,
+                                                             opt.prefix_label))
     
     if os.path.exists(embed_pth):
         return
@@ -141,24 +142,22 @@ def create_and_save_descriptions(opt, vocab):
         with torch.no_grad():
             print("Creating tokenizer...")
             tokenizer = AutoTokenizer.from_pretrained(opt.desc_embed_model)
-    #         tokenizer = BertTokenizer.from_pretrained(opt.desc_embed_model)
             print("Initializing {}...".format(opt.desc_embed_model))
-    #         model = BertModel.from_pretrained(opt.desc_embed_model)          
             model = AutoModelForMaskedLM.from_pretrained(opt.desc_embed_model, output_hidden_states=True)
 
             # Create wordnet
             defs = [wordnet.synsets(v.replace(" ", "_"))[0].definition() for v in vocab]
     #         defs = torch.cat(defs, 0)
             embeds = []
-            for d in defs:
-                inp = tokenizer(d, return_tensors="pt")
+            for i,d in enumerate(defs):
+                inp = vocab[i]+" "+d if opt.prefix_label else d
+                inp = tokenizer(inp, return_tensors="pt")
                 outputs = model(**inp)
                 hidden_states = outputs[1]
                 embed = torch.mean(hidden_states[opt.transformer_layer], dim=(0,1))
                 embeds.append(embed)
 
             d = dict(zip(vocab, embeds))
-            ipdb.set_trace()
             # Pickle the dictionary for later load
             print("Pickling description embeddings from {}...".format(opt.desc_embed_model))
             with open(embed_pth, 'wb') as f:

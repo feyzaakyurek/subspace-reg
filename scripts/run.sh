@@ -15,5 +15,5 @@
 # supervised pretraining with class labels
 # python train_supervised.py --trial pretrain --model_path dumped  --data_root data --classifier lang-linear --word_embed_size 500
 
-# supervised pretraining with class wordnet descriptions
-python train_supervised.py --trial pretrain --model_path dumped --tb_path tb --data_root data --classifier description-linear --desc_embed_model bert-base-cased > train_supervised_desc.log
+# supervised pretraining with class wordnet descriptions,  wandb/dryrun-20200922_202406-1ngu2zhc with prefixes
+python train_supervised.py --trial pretrain --model_path dumped --tb_path tb --data_root data --classifier description-linear --desc_embed_model bert-base-cased --prefix_label --multip_fc 0.15 --transformer_layer 9

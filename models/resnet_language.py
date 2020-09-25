@@ -153,11 +153,11 @@ class BasicBlock(nn.Module):
     
 class LangLinearClassifier(nn.Module):
     def __init__(self, vocab,  load_embeds, dim, description=False, 
-                 cdim=640, bias=False, verbose=True, multip_fc=0.05):
+                 cdim=640, bias=False, verbose=True, multip_fc=0.15):
         super(LangLinearClassifier, self).__init__()
         self.vocab = vocab
         self.dim = dim
-        self.multip_fc = multip_fc
+        self.multip_fc = nn.Parameter(torch.LongTensor([multip_fc]), requires_grad=False)
         bound = 1 / math.sqrt(cdim)
         assert os.path.exists(load_embeds)
 
@@ -215,9 +215,6 @@ class LangLinearClassifier(nn.Module):
     def forward(self, input):
         return F.linear(input, self.weight(), self.bias)
     
-    
-
-
 
 class ResNet(nn.Module):
 
