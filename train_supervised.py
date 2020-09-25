@@ -140,7 +140,7 @@ def parse_option():
     if opt.adam:
         opt.model_name = '{}_useAdam'.format(opt.model_name)
 
-    opt.model_name = '{}_trial_{}'.format(opt.model_name, opt.trial)
+    opt.model_name = '{}_trial_{}_layer_{}_multip_{}'.format(opt.model_name, opt.trial, opt.transformer_layer, opt.multip_fc)
 
     opt.tb_folder = os.path.join(opt.tb_path, opt.model_name)
     if not os.path.isdir(opt.tb_folder):
