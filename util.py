@@ -131,9 +131,10 @@ def create_and_save_descriptions(opt, vocab):
         os.makedirs(opt.description_embed_path)
  
     embed_pth = os.path.join(opt.description_embed_path, 
-                             "{0}_{1}_layer{2}.pickle".format(opt.dataset,
+                             "{0}_{1}_layer{2}_prefix_{3}.pickle".format(opt.dataset,
                                                              opt.desc_embed_model,
-                                                             opt.transformer_layer))
+                                                             opt.transformer_layer,
+                                                             opt.prefix_label))
     
     if os.path.exists(embed_pth):
         return
@@ -149,7 +150,7 @@ def create_and_save_descriptions(opt, vocab):
     #         defs = torch.cat(defs, 0)
             embeds = []
             for i,d in enumerate(defs):
-                inp = v[i]+" "+d if opt.prefix_label else d
+                inp = vocab[i]+" "+d if opt.prefix_label else d
                 inp = tokenizer(inp, return_tensors="pt")
                 outputs = model(**inp)
                 hidden_states = outputs[1]
@@ -157,7 +158,6 @@ def create_and_save_descriptions(opt, vocab):
                 embeds.append(embed)
 
             d = dict(zip(vocab, embeds))
-            ipdb.set_trace()
             # Pickle the dictionary for later load
             print("Pickling description embeddings from {}...".format(opt.desc_embed_model))
             with open(embed_pth, 'wb') as f:
