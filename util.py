@@ -141,9 +141,7 @@ def create_and_save_descriptions(opt, vocab):
         with torch.no_grad():
             print("Creating tokenizer...")
             tokenizer = AutoTokenizer.from_pretrained(opt.desc_embed_model)
-    #         tokenizer = BertTokenizer.from_pretrained(opt.desc_embed_model)
             print("Initializing {}...".format(opt.desc_embed_model))
-    #         model = BertModel.from_pretrained(opt.desc_embed_model)          
             model = AutoModelForMaskedLM.from_pretrained(opt.desc_embed_model, output_hidden_states=True)
 
             # Create wordnet
