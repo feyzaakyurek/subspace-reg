@@ -1,7 +1,7 @@
 name: rfs
 channels:
-  - conda-forge
   - anaconda
+  - conda-forge
   - defaults
 dependencies:
   - _libgcc_mutex=0.1=main
@@ -13,9 +13,10 @@ dependencies:
   - backports.functools_lru_cache=1.6.1=py_0
   - blas=1.0=mkl
   - c-ares=1.15.0=h7b6447c_1001
-  - ca-certificates=2020.6.20=hecda079_0
-  - certifi=2020.6.20=py36h9f0ad1d_0
+  - ca-certificates=2020.7.22=0
+  - certifi=2020.6.20=py36_0
   - cffi=1.14.0=py36h2e261b9_0
+  - click=7.1.2=py_0
   - cudatoolkit=9.0=h13b8566_0
   - cudnn=7.6.5=cuda9.0_0
   - cupti=9.0.176=0
@@ -52,17 +53,17 @@ dependencies:
   - mkl_random=1.1.0=py36hd6b4f25_0
   - ncurses=6.2=he6710b0_1
   - ninja=1.9.0=py36hfd86e86_0
+  - nltk=3.5=py_0
   - numpy=1.18.5=py36ha1c710e_0
   - numpy-base=1.18.5=py36hde5b4d6_0
   - olefile=0.46=py_0
-  - openssl=1.1.1g=h516909a_1
+  - openssl=1.1.1h=h7b6447c_0
   - parso=0.7.1=pyh9f0ad1d_0
   - pexpect=4.8.0=py36h9f0ad1d_1
   - pickleshare=0.7.5=py36h9f0ad1d_1001
   - pillow=7.2.0=py36hb39fc2d_0
   - pip=20.1.1=py36_1
   - prompt-toolkit=3.0.5=py_1
-  - protobuf=3.6.0=py36hf484d3e_0
   - ptyprocess=0.6.0=py_1001
   - pycparser=2.20=py_2
   - pygments=2.6.1=py_0
@@ -70,6 +71,7 @@ dependencies:
   - python_abi=3.6=1_cp36m
   - pytorch=1.1.0=cuda90py36h8b0c50b_0
   - readline=7.0=h7b6447c_5
+  - regex=2020.7.14=py36h7b6447c_0
   - scikit-learn=0.23.1=py36h423224d_0
   - scipy=1.5.0=py36h0b6359f_0
   - setuptools=49.2.0=py36_0
@@ -95,19 +97,42 @@ dependencies:
   - pip:
     - beautifulsoup4==4.9.1
     - chardet==3.0.4
+    - configparser==5.0.0
     - cycler==0.10.0
+    - dataclasses==0.7
+    - docker-pycreds==0.4.0
+    - filelock==3.0.12
+    - gitdb==4.0.5
+    - gitpython==3.1.8
     - googledrivefiledownloader==0.0.3
     - html5lib==1.1
     - idna==2.10
     - kiwisolver==1.2.0
     - matplotlib==3.3.1
+    - packaging==20.4
+    - pathtools==0.1.2
+    - promise==2.3
+    - protobuf==3.13.0
+    - psutil==5.7.2
     - pyparsing==2.4.7
     - python-dateutil==2.8.1
     - pytorch-nlp==0.5.0
+    - pyyaml==5.3.1
     - requests==2.24.0
+    - sacremoses==0.0.43
+    - sentencepiece==0.1.91
+    - sentry-sdk==0.17.8
+    - shortuuid==1.0.1
+    - smmap==3.0.4
     - soupsieve==2.0.1
+    - subprocess32==3.5.4
     - tensorboard-logger==0.1.0
+    - tokenizers==0.8.1rc2
     - tqdm==4.48.2
+    - transformers==3.2.0
     - urllib3==1.25.10
+    - wandb==0.10.2
+    - watchdog==0.10.3
     - webencodings==0.5.1
+prefix: /home/gridsan/eakyurek/anaconda3/envs/rfs
 

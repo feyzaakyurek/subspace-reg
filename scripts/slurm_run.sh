@@ -13,10 +13,13 @@ echo "$SLURM_ARRAY_TASK_ID"
 
 ##export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
-LINE=$(awk 'NR==$SLURM_ARRAY_TASK_ID' scripts/base_hyperparameters.txt)
-PARAMS=($LINE)
-LAYER=${PARAMS[0]}
-MULTIPFC=${PARAMS[1]}
+FILE="scripts/base_hyperparameters.txt"
+
+LINE=$(sed "${SLURM_ARRAY_TASK_ID}q;d" $FILE)
+read -ra PARAMS<<< "$LINE"
+LAYER="${PARAMS[0]}"
+MULTIPFC="${PARAMS[1]}"
+echo "*******LAYER: $LAYER MULTIPFC: $MULTIPFC *******"
 
 # nvidia-smi
 
@@ -31,7 +34,9 @@ MULTIPFC=${PARAMS[1]}
 # echo "SLURM Job ID : $SLURM_JOB_ID" >> $LOG_STDOUT
 # echo "SBATCH script: slurm_run.sh" >> $LOG_STDOUT
 
+python eval_incremental.py --model_path dumped/ekin_dumped/resnet12_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain_layer_{$LAYER}_multip_{$MULTIPFC}/resnet12_last.pth --data_root data --n_shots 5 --eval_mode few-shot-language-incremental --classifier description-linear --novel_epochs 14 --learning_rate 0.001 --num_novel_combs 599 --freeze_backbone --lmbd_reg_transform_w 0.01 --target_train_loss 0.6
+
+# export WANDB_MODE=dryrun
 # python train_supervised.py --trial pretrain --model_path dumped --tb_path tb --data_root data --classifier description-linear --desc_embed_model bert-base-cased --prefix_label --multip_fc $MULTIPFC --transformer_layer $LAYER
 
-python eval_incremental.py --model_path dumped/ekin_dumped/resnet12_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain_layer_{$LAYER}_multip_{$MULTIPFC}/resnet12_last.pth --data_root data --n_shots 5 --eval_mode few-shot-language-incremental --classifier description-linear --novel_epochs 14 --learning_rate 0.001 --num_novel_combs 599 --freeze_backbone --lmbd_reg_transform_w 0.01 --target_train_loss 0.6
 
