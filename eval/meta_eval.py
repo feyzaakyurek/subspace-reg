@@ -36,6 +36,9 @@ def normalize(x):
 
 
 def zero_shot_incremental_test(net, meta_valloader, base_val_loader, opt, alpha, is_norm=False):
+    """
+    warning: not succinctly reviewed.
+    """
     net = net.eval()
     acc_novel = []
     acc_base = []
@@ -98,7 +101,6 @@ def zero_shot_incremental_test(net, meta_valloader, base_val_loader, opt, alpha,
             acc_novel.append(metrics.accuracy_score(novel_ys_pred, query_ys_id))
             
             # Important to evaluate base class samples against different combinations of novel classes. 
-#             if idx < opt.num_novel_combs:
             acc_base_ = []
             for idb, (input, target, _) in enumerate(base_val_loader):
                 input = input.float().cuda()
@@ -118,7 +120,7 @@ def zero_shot_incremental_test(net, meta_valloader, base_val_loader, opt, alpha,
     return mean_confidence_interval(acc_novel), mean_confidence_interval(acc_base)
 
             
-def few_shot_language_incremental_test(net, ckpt, optimizer, criterion, meta_valloader, base_val_loader, opt, run):
+def few_shot_language_incremental_test(net, ckpt, optimizer, criterion, meta_valloader, base_val_loader, opt):
     acc_novel = []
     acc_base = []
     label2human_base = base_val_loader.dataset.label2human
@@ -150,13 +152,12 @@ def few_shot_language_incremental_test(net, ckpt, optimizer, criterion, meta_val
         net = net.cuda()
         net = net.train()
         
-        # Freeze backbone except the classifier
-        freeze_backbone_weights(net, opt)
-        classifier = net.classifier
-        
         # Retrieve the names of the classes in order, based on original integer ids
         human_label_list = [label2human_novel[y] for y in unique_sorted_lbls] # TODO: are you sure?
         
+        # For the multiplicative factor on embeddings we need to use the same factor that was
+        # used in training for novel samples' embeddings too.
+        classifier = net.classifier
         if opt.classifier == "lang-linear":
             
             # Create the language classifier which uses only novel class names' embeddings
@@ -168,7 +169,7 @@ def few_shot_language_incremental_test(net, ckpt, optimizer, criterion, meta_val
                                                     cdim=640,  
                                                     bias=opt.lang_classifier_bias, 
                                                     verbose=False,
-                                                    multip_fc=classifier.multip_fc)
+                                                    multip_fc=opt.multip_fc)
             
         else: # Description linear classifier
             
@@ -184,7 +185,7 @@ def few_shot_language_incremental_test(net, ckpt, optimizer, criterion, meta_val
                                                     bias=opt.lang_classifier_bias,
                                                     description=True, 
                                                     verbose=False,
-                                                    multip_fc=classifier.multip_fc)
+                                                    multip_fc=opt.multip_fc)
 
         novel_embeds = dummy_classifier.embed.cuda()
 
@@ -196,7 +197,7 @@ def few_shot_language_incremental_test(net, ckpt, optimizer, criterion, meta_val
         test_acc, test_acc_top5, test_loss = validate_fine_tune(query_xs, query_ys_id, net, criterion, opt)
         print('{:25} {:.4f}\n'.format("Novel incremental acc before fine-tune:",test_acc.item()))
         
-        # Evaluate base samples with the updated network
+        # Evaluate base samples before the network is updated.
         acc_base_ = eval_base(net, base_val_loader, criterion)
         print('{:25} {:.4f}\n'.format("Base incremental acc before fine-tune:",acc_base_))
         
@@ -212,6 +213,9 @@ def few_shot_language_incremental_test(net, ckpt, optimizer, criterion, meta_val
         epoch = 1
         while train_loss > opt.target_train_loss or epoch < opt.novel_epochs + 1:
 #         for epoch in range(1, opt.novel_epochs + 1):
+            # Freeze backbone except the classifier
+            freeze_backbone_weights(net, epoch, opt)
+        
             train_acc, train_loss = fine_tune_novel(epoch, support_xs, support_ys_id, net, 
                                                     criterion, optimizer, orig_classifier_weights, opt)
             test_acc, test_acc_top5, test_loss = validate_fine_tune(query_xs, query_ys_id, net, criterion, opt)
@@ -241,10 +245,10 @@ def few_shot_language_incremental_test(net, ckpt, optimizer, criterion, meta_val
                   acc_base_,
                   "Average:",
                   avg_score))
-        run.log({'idx':idx, 
-                 "{}_novel_acc".format(opt.split):test_acc.item(), 
-                 "{}_base_acc".format(opt.split):acc_base_, 
-                 "{}_average".format(opt.split):avg_score})
+#         run.log({'idx':idx, 
+#                  "{}_novel_acc".format(opt.split):test_acc.item(), 
+#                  "{}_base_acc".format(opt.split):acc_base_, 
+#                  "{}_average".format(opt.split):avg_score})
     
 #         if idx >= opt.num_novel_combs:
     return mean_confidence_interval(acc_novel), mean_confidence_interval(acc_base)
@@ -305,17 +309,16 @@ def validate_fine_tune(query_xs, query_ys_id, net, criterion, opt):
     return acc1[0], acc5[0], loss.item()
 
 def eval_base(net, base_val_loader, criterion):
-        
     acc_base_ = []
     net.eval()
     with torch.no_grad():
-        for idb, (input, target, _) in enumerate(base_val_loader):
-            input = input.float()
+        for idb, (inp, target, _) in enumerate(base_val_loader):
+            inp = inp.float()
             if torch.cuda.is_available():
-                input = input.cuda()
+                inp = inp.cuda()
                 target = target.cuda()
 
-            output = net(input)
+            output = net(inp)
             loss = criterion(output, target)
 
             acc1, acc5 = accuracy(output, target, topk=(1, 5))
@@ -471,8 +474,8 @@ def incremental_test(net, testloader, val_loader, alpha, use_logit=True, is_norm
     return mean_confidence_interval(acc_novel), mean_confidence_interval(acc_base)
 
 
-def freeze_backbone_weights(backbone, opt):
-    if opt.freeze_backbone:
+def freeze_backbone_weights(backbone, epoch, opt):
+    if opt.freeze_backbone_at == epoch:
         print("Freezing the backbone.")
         for name, param in backbone.named_parameters():
             param.requires_grad = False

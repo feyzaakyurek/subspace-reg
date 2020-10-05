@@ -1,7 +1,8 @@
 # python eval_incremental.py --model_path dumped/resnet12_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain/resnet12_last.pth --data_root data --n_shots 5 --incremental_eval
 
 from __future__ import print_function
-
+import warnings
+warnings.filterwarnings('ignore',category=FutureWarning)
 import argparse
 import socket
 import time
@@ -29,8 +30,8 @@ from eval.cls_eval import incremental_validate
 from util import create_and_save_embeds, restricted_float, create_and_save_descriptions
 
 
-import wandb
-run = wandb.init(project="lil")
+# import wandb
+# run = wandb.init(project="lil")
 
 def parse_option():
 
@@ -74,7 +75,7 @@ def parse_option():
     if parser.parse_known_args()[0].eval_mode in ["zero-shot-incremental","few-shot-incremental"]:
         parser.add_argument("--start_alpha", type=restricted_float, default="0.7",
                             help="Alpha is the fraction to multiply base scores with. Start is the beginning of the range to try.")
-        parser.add_argument("--end_alpha", type=restricted_float, default="0.9",
+        parser.add_argument("--end_alpha", type=restricted_float, default="0.8",
                             help="Alpha is the fraction to multiply base scores with. End is the beginning of the range to try.")
         parser.add_argument("--inc_alpha", type=restricted_float, default="0.01",
                             help="Alpha is the fraction to multiply base scores with. Inc is increment.")
@@ -90,8 +91,8 @@ def parse_option():
                             help='Use of bias in lang classifier.')
         parser.add_argument('--multip_fc', type=float, default=0.05)
         
-    if parser.parse_known_args()[0].eval_mode in ['zero-shot-incremental', 'few-shot-language-incremental']:
-        parser.add_argument('--num_novel_combs', type=int, default=5, 
+    if parser.parse_known_args()[0].eval_mode in ['zero-shot-incremental']:
+        parser.add_argument('--num_novel_combs', type=int, default=0.05, 
                             help='Number of combinations of novel/test classes to evaluate base samples against:)')
         
     if parser.parse_known_args()[0].eval_mode == "few-shot-language-incremental":
@@ -100,7 +101,7 @@ def parse_option():
         parser.add_argument('--weight_decay', type=float, default=5e-4, help='weight decay')
         parser.add_argument('--momentum', type=float, default=0.9, help='momentum')
         parser.add_argument('--adam', action='store_true', help='use adam optimizer')
-        parser.add_argument('--freeze_backbone', action='store_true', help='freeze backbone while updating classifier.')
+        parser.add_argument('--freeze_backbone_at', type=int, default=1, help='freeze backbone while updating classifier at the epoch X, epochs start at 1.')
         parser.add_argument('--lmbd_reg_transform_w',  type=float, default=None, help='learning rate')
         parser.add_argument('--target_train_loss',  type=float, default=0.8, help='learning rate')
         
@@ -130,7 +131,7 @@ def parse_option():
 def main():
 
     opt = parse_option()
-    run.config.update(opt)
+#     run.config.update(opt)
 
     # test loader
     args = opt
@@ -240,7 +241,7 @@ def main():
         model = model.cuda()
         cudnn.benchmark = True
 
-    run.watch(model)
+#     run.watch(model)
     
     # evaluation
         
@@ -334,16 +335,15 @@ def main():
                                                          criterion, 
                                                          meta_valloader, 
                                                          base_val_loader, 
-                                                         opt, 
-                                                         run) 
+                                                         opt) 
         val_time = time.time() - start
         avg_score = (base[0]+novel[0])/2
         print('val_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel[0], novel[1], val_time))
         print('val_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base[0], base[1], val_time))
-        run.log({
-           'val_acc_novel_avg': novel[0],
-           'val_acc_base_avg': base[0],
-           'val_acc_avg_both': avg_score})
+#         run.log({
+#            'val_acc_novel_avg': novel[0],
+#            'val_acc_base_avg': base[0],
+#            'val_acc_avg_both': avg_score})
                   
         start = time.time()
         opt.split = "test"
@@ -353,16 +353,15 @@ def main():
                                                          criterion, 
                                                          meta_testloader, 
                                                          base_test_loader, 
-                                                         opt, 
-                                                         run) 
+                                                         opt) 
         test_time = time.time() - start       
         avg_score = (base[0]+novel[0])/2
         print('test_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel[0], novel[1], test_time))
         print('test_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base[0], base[1], test_time))
-        run.log({
-           'test_acc_novel_avg': novel[0],
-           'test_acc_base_avg': base[0],
-           'test_acc_avg_both': avg_score})
+#         run.log({
+#            'test_acc_novel_avg': novel[0],
+#            'test_acc_base_avg': base[0],
+#            'test_acc_avg_both': avg_score})
         
     elif opt.eval_mode == "few-shot":
         start = time.time()
