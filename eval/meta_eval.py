@@ -24,7 +24,6 @@ from PIL import Image
 import io
 import base64
 
-
 def mean_confidence_interval(data, confidence=0.95):
     a = 1.0 * np.array(data)
     n = len(a)
@@ -32,52 +31,102 @@ def mean_confidence_interval(data, confidence=0.95):
     h = se * t._ppf((1+confidence)/2., n-1)
     return m, h
 
-
 def normalize(x):
     norm = x.pow(2).sum(1, keepdim=True).pow(1. / 2)
-    out = x.div(norm)
-    return out
+    return x.div(norm)
+
+def image_formatter(im):
+    im = ((im / np.max(im, axis=(1,2), keepdims=True)) * 255).astype('uint8').transpose((1,2,0))
+    im = Image.fromarray(im)
+    rawBytes = io.BytesIO()
+    im.save(rawBytes, "PNG") # TODO: why this is required here ?
+    rawBytes.seek(0)  # return to the start of the file
+    decoded = base64.b64encode(rawBytes.read()).decode()
+    return f'<img src="data:image/jpeg;base64,{decoded}">'
+
+def freeze_backbone_weights(backbone, opt, exclude=['classifier.transform']):
+    if opt.freeze_backbone:
+        print("Freezing the backbone.")
+        for name, param in backbone.named_parameters():
+            param.requires_grad = False
+            if any(map(lambda s: name.startswith(s), exclude)): # why not; name in exclude:
+                print("Not frozen ", name)
+                param.requires_grad = True
+
+def NN(support, support_ys, query):
+    """nearest classifier"""
+    support = np.expand_dims(support.transpose(), 0)
+    query = np.expand_dims(query, 2)
+    diff = np.multiply(query - support, query - support)
+    distance = diff.sum(1)
+    min_idx = np.argmin(distance, axis=1)
+    pred = [support_ys[idx] for idx in min_idx]
+    return pred
 
 
-def zero_shot_incremental_test(net, meta_valloader, base_val_loader, opt, alpha, is_norm=False):
+def Cosine(support, support_ys, query):
+    """Cosine classifier"""
+    support_norm = np.linalg.norm(support, axis=1, keepdims=True)
+    support = support / support_norm
+    query_norm = np.linalg.norm(query, axis=1, keepdims=True)
+    query = query / query_norm
+    cosine_distance = query @ support.transpose()
+    max_idx = np.argmax(cosine_distance, axis=1)
+    pred = [support_ys[idx] for idx in max_idx]
+    return pred
+
+
+def get_vocabs(base_loader=None, novel_loader=None, query_ys=None):
+    vocab_all = []
+    vocab_base = None
+    if base_loader is not None:
+        label2human_base = base_loader
+        vocab_base  = [name for name in label2human_base if name != '']
+        vocab_all  += vocab_base
+
+    vocab_novel, orig2id = None, None
+
+    if novel_loader is not None:
+        novel_ids = np.sort(np.unique(query_ys))
+        label2human_novel = novel_loader.dataset.label2human
+        vocab_novel = [label2human_novel[i] for i in novel_ids]
+        orig2id = dict(zip(novel_ids, len(vocab_base) + np.arange(len(novel_ids))))
+        vocab_all += vocab_novel
+
+    return vocab_base, vocab_all, vocab_novel, orig2id
+
+def zero_shot_incremental_test(net, meta_valloader, base_val_loader, opt, alpha, is_norm=False, vis=False):
     net = net.eval()
     acc_novel = []
     acc_base = []
-    label2human_base = base_val_loader.dataset.label2human
-    label2human_novel = meta_valloader.dataset.label2human
-
+    if vis:
+        df = pd.DataFrame(columns=['idx', 'class', 'isbase', 'predicted', 'img'])
     random_batches = np.random.choice(np.arange(len(meta_valloader)), opt.num_novel_combs, False)
     with torch.no_grad():
         for idx, data in tqdm(enumerate(meta_valloader)):
             if idx not in random_batches:
                 continue
-            _,_, query_xs, query_ys = data # Read novel val batch
-            query_xs = query_xs.cuda()
-            batch_size, _, height, width, channel = query_xs.size()
-            query_xs = query_xs.view(-1, height, width, channel)
-            query_ys = query_ys.view(-1).numpy()
+            _,_, query_xs, query_ys = drop_a_dim(data) # Read novel val batch
+            novelimgs = query_xs.detach().numpy()
 
             # Extract features
-            feat_query, _ = net(query_xs, is_feat=True)
+            feat_query, _ = net(query_xs.cuda(), is_feat=True)
             query_features = feat_query[-1].view(query_xs.size(0), -1)
 
             # Normalize
             if is_norm:
                 query_features = normalize(query_features)
 
-            # Get sorted numeric labels,
-            unique_sorted_lbls = np.sort(np.unique(query_ys))
-
             # Retrieve the vocab
-            vocab_base = [name for name in label2human_base if name != ''] #TODO, ORDER??
-            vocab_novel = [label2human_novel[id] for id in unique_sorted_lbls]
-            print(f"Novel class labels are {vocab_novel}.")
-            vocab = vocab_base + vocab_novel
+            vocab_base, vocab_all, vocab_novel, orig2id = get_vocabs(base_val_loader, meta_valloader, query_ys)
+            print("len(vocab): ", len(vocab_all))
+            query_ys_id = [orig2id[y] for y in query_ys]
+
             dim = opt.word_embed_size
             embed_pth = os.path.join(opt.word_embed_path, "{0}_dim{1}.pickle".format(opt.dataset, dim))
 
             # Create classifier with base and novel class labels.
-            classifier = LangLinearClassifier(vocab, embed_pth, dim=dim, cdim=640,
+            classifier = LangLinearClassifier(vocab_all, embed_pth, dim=dim, cdim=640,
                                               bias=opt.lang_classifier_bias, verbose=False,
                                               multip_fc=net.classifier.multip_fc)
 
@@ -87,9 +136,6 @@ def zero_shot_incremental_test(net, meta_valloader, base_val_loader, opt, alpha,
             classifier.transform_B = net.classifier.transform_B
             classifier = classifier.cuda()
 
-            # Create a mapping that maps the order to actual label
-            orig2id = dict(zip(unique_sorted_lbls, len(vocab_base) + np.arange(len(unique_sorted_lbls))))
-            query_ys_id = [orig2id[y] for y in query_ys]
 
             # Get the classification scores for novel samples for both base and novel classes.
             novel_ys_pred_scores_ = classifier(query_features).detach().cpu().numpy()
@@ -101,11 +147,14 @@ def zero_shot_incremental_test(net, meta_valloader, base_val_loader, opt, alpha,
             # Get predictions
             novel_ys_pred = np.argmax(novel_ys_pred_scores, 1)
             acc_novel.append(metrics.accuracy_score(novel_ys_pred, query_ys_id))
-
+            if vis and idx == 0:
+                novel_info = [(idx, vocab_all[query_ys_id[i]], False, vocab_all[novel_ys_pred[i]],  image_formatter(novelimgs[i,:,:,:]))  for i in range(len(query_ys_id))]
+                df = df.append(pd.DataFrame(novel_info, columns=df.columns), ignore_index=True)
             # Important to evaluate base class samples against different combinations of novel classes.
 #             if idx < opt.num_novel_combs:
             acc_base_ = []
             for idb, (input, target, _) in enumerate(base_val_loader):
+                imgdata = input.detach().numpy()
                 input = input.float().cuda()
                 input = input.cuda()
                 feat_query, _ = net(input, is_feat=True)
@@ -118,50 +167,49 @@ def zero_shot_incremental_test(net, meta_valloader, base_val_loader, opt, alpha,
                                               (1-alpha) * base_ys_pred_scores_[:,-len(vocab_novel):]], 1)
                 base_ys_pred = np.argmax(base_ys_pred_scores, 1)
                 acc_base_.append(metrics.accuracy_score(base_ys_pred, target))
+                if vis and idx == 0:
+                    base_info = [(idx, vocab_all[target[i]], True, vocab_all[base_ys_pred[i]], image_formatter(imgdata[i,:,:,:]))  for i in range(len(target))]
+                    df = df.append(pd.DataFrame(base_info, columns=df.columns), ignore_index=True)
             acc_base.append(np.mean(acc_base_))
 #             else:
+    if vis:
+        return df
     return mean_confidence_interval(acc_novel), mean_confidence_interval(acc_base)
 
+def drop_a_dim(data): #TODO why do we need this in the first place?
+    support_xs, support_ys, query_xs, query_ys = data
+    batch_size, _, height, width, channel = support_xs.size()
+    support_xs = support_xs.view(-1, height, width, channel)
+    query_xs = query_xs.view(-1, height, width, channel)
+    support_ys = support_ys.view(-1).numpy() # TODO
+    query_ys = query_ys.view(-1).numpy()
+    return (support_xs, support_ys, query_xs, query_ys)
 
+def few_shot_language_incremental_test(net, ckpt, optimizer, criterion, meta_valloader, base_val_loader, opt, run, vis=False):
+    if vis:
+        df = pd.DataFrame(columns=['idx', 'class', 'isbase', 'predicted', 'img'])
 
-def few_shot_language_incremental_test(net, ckpt, optimizer, criterion, meta_valloader, base_val_loader, opt, run):
     acc_novel = []
     acc_base = []
-    label2human_base = base_val_loader.dataset.label2human
-    label2human_novel = meta_valloader.dataset.label2human
+    basenet = copy.deepcopy(net).cuda()
+    embed = basenet.classifier.embed
+    trns  = basenet.classifier.transform_W
+    orig_classifier_weights = embed @ trns if opt.lmbd_reg_transform_w else None
 
     for idx, data in enumerate(meta_valloader):
-        support_xs, support_ys, query_xs, query_ys = data
-        batch_size, _, height, width, channel = support_xs.size()
-        support_xs = support_xs.view(-1, height, width, channel)
-        query_xs = query_xs.view(-1, height, width, channel)
-        support_ys = support_ys.view(-1)
-        query_ys = query_ys.view(-1)
-        print("Reloading model...")
+        support_xs, support_ys, query_xs, query_ys = drop_a_dim(data)
+        novelimgs = query_xs.detach().numpy()
 
         # Get sorted numeric labels, create a mapping that maps the order to actual label
-        unique_sorted_lbls = np.sort(np.unique(support_ys))
-        assert (unique_sorted_lbls == np.sort(np.unique(query_ys))).all()
-        vocab_base = [name for name in label2human_base if name != '']
-        orig2id = dict(zip(unique_sorted_lbls, len(vocab_base) + np.arange(len(unique_sorted_lbls))))
-        query_ys_id = torch.LongTensor([orig2id[y] for y in query_ys.numpy()])
-        support_ys_id = torch.LongTensor([orig2id[y] for y in support_ys.numpy()])
+        vocab_base, vocab_all, vocab_novel, orig2id = get_vocabs(base_val_loader, meta_valloader, support_ys)
+        query_ys_id = torch.LongTensor([orig2id[y] for y in query_ys])
+        support_ys_id = torch.LongTensor([orig2id[y] for y in support_ys])
 
-         # Small hack: Restore net's original classifier.embed size
-        _, dim = net.classifier.embed.size()
-        net.classifier.embed = nn.Parameter(torch.Tensor(len(vocab_base),dim), requires_grad=False)
-        net.load_state_dict(ckpt['model'])
-
-        # Send to cuda
-        net = net.cuda()
-        net = net.train()
-
-        # Freeze backbone except the classifier
+        net = copy.deepcopy(basenet)
         freeze_backbone_weights(net, opt)
-        classifier = net.classifier
+        net.train()
 
-        # Retrieve the names of the classes in order, based on original integer ids
-        human_label_list = [label2human_novel[y] for y in unique_sorted_lbls] # TODO: are you sure?
+        classifier = net.classifier
 
         if opt.classifier == "lang-linear":
 
@@ -176,14 +224,14 @@ def few_shot_language_incremental_test(net, ckpt, optimizer, criterion, meta_val
                                                     verbose=False,
                                                     multip_fc=classifier.multip_fc)
 
-        else: # Description linear classifier 
-            embed_pth = os.path.join(opt.description_embed_path, 
+        else: # Description linear classifier
+            embed_pth = os.path.join(opt.description_embed_path,
                                      "{0}_{1}_layer{2}_prefix_{3}.pickle".format(opt.dataset,
                                                                                  opt.desc_embed_model,
                                                                                  opt.transformer_layer,
                                                                                  opt.prefix_label))
-            dummy_classifier = LangLinearClassifier(human_label_list, 
-                                                    embed_pth, 
+            dummy_classifier = LangLinearClassifier(human_label_list,
+                                                    embed_pth,
                                                     cdim=640,
                                                     dim=None,
                                                     bias=opt.lang_classifier_bias,
@@ -203,15 +251,13 @@ def few_shot_language_incremental_test(net, ckpt, optimizer, criterion, meta_val
         print('{:25} {:.4f}\n'.format("Novel incremental acc before fine-tune:",test_acc.item()))
 
         # Evaluate base samples with the updated network
-        acc_base_ = eval_base(net, base_val_loader, criterion)
+        acc_base_ = eval_base(net, base_val_loader, criterion, vocab_all) # where to update df for this evaluations???
         print('{:25} {:.4f}\n'.format("Base incremental acc before fine-tune:",acc_base_))
 
         # Retrieve original transform_W if regularization
 #         orig_transform_W = ckpt['model']['classifier.transform_W'] if opt.lmbd_reg_transform_w else None
 #         ipdb.set_trace()
-        embed = ckpt['model']['classifier.embed']
-        trns = ckpt['model']['classifier.transform_W']
-        orig_classifier_weights = embed @ trns if opt.lmbd_reg_transform_w else None
+
 
         # routine: fine-tuning for novel classes
         train_loss = 15
@@ -220,12 +266,20 @@ def few_shot_language_incremental_test(net, ckpt, optimizer, criterion, meta_val
 #         for epoch in range(1, opt.novel_epochs + 1):
             train_acc, train_loss = fine_tune_novel(epoch, support_xs, support_ys_id, net,
                                                     criterion, optimizer, orig_classifier_weights, opt)
-            test_acc, test_acc_top5, test_loss = validate_fine_tune(query_xs, query_ys_id, net, criterion, opt)
+            test_acc, test_acc_top5, test_loss, query_ys_pred = validate_fine_tune(query_xs, query_ys_id, net, criterion, opt)
+            if vis and idx == 0:
+                novel_info = [(idx, vocab_all[query_ys_id[i]], False, vocab_all[query_ys_pred[i]],  image_formatter(novelimgs[i,:,:,:]))  for i in range(len(query_ys_id))]
+                df = df.append(pd.DataFrame(novel_info, columns=df.columns), ignore_index=True)
             epoch += 1
         acc_novel.append(test_acc.item())
 
         # Evaluate base samples with the updated network
-        acc_base_ = eval_base(net, base_val_loader, criterion)
+        if vis and idx == 0
+            acc_base_, base_query_ys_preds = eval_base(net, base_val_loader, criterion, vocab_all, df=df)
+        else:
+            acc_base_, base_query_ys_preds = eval_base(net, base_val_loader, criterion, vocab_all)
+
+
         acc_base.append(acc_base_)
 
         avg_score = (acc_base_ + test_acc.item())/2
@@ -254,7 +308,10 @@ def few_shot_language_incremental_test(net, ckpt, optimizer, criterion, meta_val
                  "{}_average".format(opt.split):avg_score})
 
 #         if idx >= opt.num_novel_combs:
-    return mean_confidence_interval(acc_novel), mean_confidence_interval(acc_base)
+    if vis:
+        return df
+    else:
+        return mean_confidence_interval(acc_novel), mean_confidence_interval(acc_base)
 
 
 
@@ -297,57 +354,50 @@ def validate_fine_tune(query_xs, query_ys_id, net, criterion, opt):
         if torch.cuda.is_available():
             query_xs = query_xs.cuda()
             query_ys_id = query_ys_id.cuda()
-
             # compute output
             output = net(query_xs)
             loss = criterion(output, query_ys_id)
-
             # measure accuracy and record loss
             acc1, acc5 = accuracy(output, query_ys_id, topk=(1, 5))
-
+            query_ys_pred = torch.argmax(output, dim=1).detach().cpu().numpy()
             print('Test \t'
                   'Loss {:10.4f}\t'
                   'Acc@1 {:10.3f}\t'
                   'Acc@5 {:10.3f}'.format(
                    loss.item(), acc1[0], acc5[0]))
-    return acc1[0], acc5[0], loss.item()
+    return acc1[0], acc5[0], loss.item(), query_ys_pred
 
-def eval_base(net, base_val_loader, criterion):
-
+def eval_base(net, base_val_loader, criterion, vocab_all, df=None):
     acc_base_ = []
     net.eval()
     with torch.no_grad():
         for idb, (input, target, _) in enumerate(base_val_loader):
-            input = input.float()
-            if torch.cuda.is_available():
-                input = input.cuda()
-                target = target.cuda()
-
-            output = net(input)
+            imgdata = input.detach().numpy()
+            input  = input.float().cuda()
+            output = net(input).detach().cpu()
             loss = criterion(output, target)
-
             acc1, acc5 = accuracy(output, target, topk=(1, 5))
             acc_base_.append(acc1[0].item())
-    return np.mean(acc_base_)
+            ys_pred = torch.argmax(output, dim=1).numpy()
+            if df is not None:
+                base_info = [(idx, vocab_all[target[i]], True, vocab_all[ys_pred[i]], image_formatter(imgdata[i,:,:,:]))  for i in range(len(target))]
+                df = df.append(pd.DataFrame(base_info, columns=df.columns), ignore_index=True)
+    return np.mean(acc_base_), base_preds
 
-def zero_shot_test(net, loader, opt, is_norm=True, use_logit=False, novel_only=True, **kwargs):
-    net = net.eval()
+def zero_shot_test(net, loader, opt, is_norm=True, use_logit=False, novel_only=True, vis=False, **kwargs):
+    if vis:
+        df = pd.DataFrame(columns=['idx', 'class', 'isbase', 'predicted', 'img'])
     acc_novel = []
-    label2human = loader.dataset.label2human
-
+    net = net.eval()
     with torch.no_grad():
         for idx, data in tqdm(enumerate(loader)):
-            _, _, query_xs, query_ys = data
-            query_xs = query_xs.cuda()
-            batch_size, _, height, width, channel = query_xs.size()
-            query_xs = query_xs.view(-1, height, width, channel)
-            query_ys = query_ys.view(-1).numpy()
-
+            _, _, query_xs, query_ys = drop_a_dim(data)
+            novelimgs = query_xs.numpy()
             # Extract features. Q:TODO
             if use_logit:
-                query_features = net(query_xs).view(query_xs.size(0), -1)
+                query_features = net(query_xs.cuda()).view(query_xs.size(0), -1)
             else:
-                feat_query, _ = net(query_xs, is_feat=True)
+                feat_query, _  = net(query_xs.cuda(), is_feat=True)
                 query_features = feat_query[-1].view(query_xs.size(0), -1)
 
             # Normalize
@@ -355,15 +405,13 @@ def zero_shot_test(net, loader, opt, is_norm=True, use_logit=False, novel_only=T
                 query_features = normalize(query_features)
 
             # Get sorted numeric labels, create a mapping that maps the order to actual label
-            unique_sorted_lbls = np.sort(np.unique(query_ys))
-            orig2id = dict(zip(unique_sorted_lbls, np.arange(len(unique_sorted_lbls))))
+            vocab_base, vocab_all, vocab_novel, orig2id = get_vocabs(base_loader=None, novel_loader=meta_valloader, novel_ids=support_ys)
             query_ys_id = [orig2id[y] for y in query_ys]
 
             # Retrieve the names of the classes in order
-            human_label_list = [label2human[y] for y in unique_sorted_lbls] # TODO: are you sure?
+            # human_label_list = [label2human[y] for y in unique_sorted_lbls] # TODO: are you sure?
 
             if opt.classifier == "lang-linear":
-
                 # Create the language classifier which uses only novel class names' embeddings
                 dim = opt.word_embed_size
                 embed_pth = os.path.join(opt.word_embed_path, "{0}_dim{1}.pickle".format(opt.dataset, dim))
@@ -373,10 +421,9 @@ def zero_shot_test(net, loader, opt, is_norm=True, use_logit=False, novel_only=T
                                                   cdim=640,
                                                   bias=opt.lang_classifier_bias,
                                                   verbose=False,
-                                                  multip_fc=net.classifier.multip_fc)
+                                                  multip_fc=net.classifier.multip_fc).cuda()
 
             else: # Description linear classifier
-
                 embed_pth = os.path.join(opt.description_embed_path,
                                           "{0}_{1}_layer{2}.pickle".format(opt.dataset,
                                                                            opt.desc_embed_model,
@@ -388,86 +435,64 @@ def zero_shot_test(net, loader, opt, is_norm=True, use_logit=False, novel_only=T
                                                         bias=opt.lang_classifier_bias,
                                                         description=True,
                                                         verbose=False,
-                                                        multip_fc=net.classifier.multip_fc)
+                                                        multip_fc=net.classifier.multip_fc).cuda()
 
 
 
             # Replace the transforms with the pretrained ones
             classifier.transform_W = net.classifier.transform_W
             classifier.transform_B = net.classifier.transform_B # TODO
-            #classifier.bias = net.classifier.bias # TODO
-            classifier = classifier.cuda()
 
+            #classifier.bias = net.classifier.bias # TODO
             # Get predictions for novel samples over novel classes only (should be better than random).
             novel_only_ys_pred_scores = classifier(query_features).detach().cpu().numpy()
             novel_only_ys_pred = np.argmax(novel_only_ys_pred_scores, 1)
             acc_novel.append(metrics.accuracy_score(novel_only_ys_pred, query_ys_id))
 
-        return mean_confidence_interval(acc_novel)
+            if vis and idx == 0:
+                novel_info = [(idx, vocab_all[query_ys_id[i]], False, vocab_all[novel_only_ys_pred[i]],  image_formatter(novelimgs[i,:,:,:]))  for i in range(len(query_ys_id))]
+                df = df.append(pd.DataFrame(novel_info, columns=df.columns), ignore_index=True)
+        if vis:
+            return df
+        else:
+            return mean_confidence_interval(acc_novel)
 
 
-
-def image_formatter(im):
-    im = ((im / np.max(im, axis=(1,2), keepdims=True)) * 255).astype('uint8').transpose((1,2,0))
-    im = Image.fromarray(im)
-    rawBytes = io.BytesIO()
-    im.save(rawBytes, "PNG")
-    rawBytes.seek(0)  # return to the start of the file
-    decoded = base64.b64encode(rawBytes.read()).decode()
-    return f'<img src="data:image/jpeg;base64,{decoded}">'
 
 
 def incremental_test(net, testloader, val_loader, alpha, use_logit=False, is_norm=True, classifier='LR', vis=False):
-    net = net.eval()
     acc_novel = []
     acc_base = []
-    label2human_base = val_loader.dataset.label2human
-    label2human_novel = testloader.dataset.label2human
-
     if vis:
         df = pd.DataFrame(columns=['idx', 'class', 'isbase', 'predicted', 'img'])
     assert classifier == 'LR'
 
+    net = net.eval()
     with torch.no_grad():
         for idx, data in tqdm(enumerate(testloader)):
-            support_xs, support_ys, query_xs, query_ys = data
-            batch_size, _, height, width, channel = support_xs.size()
-            novelimg_data = query_xs.detach().view(-1,height, width, channel).numpy()
-            support_xs = support_xs.cuda()
-            query_xs = query_xs.cuda()
+            if idx > 200:
+                break
 
-            support_xs = support_xs.view(-1, height, width, channel)
-            query_xs = query_xs.view(-1, height, width, channel)
-            support_ys = support_ys.view(-1)
-            query_ys = query_ys.view(-1)
+            support_xs, support_ys, query_xs, query_ys = drop_a_dim(data)
+            novelimgs = query_xs.numpy()
 
             if use_logit:
-                support_features = net(support_xs).view(support_xs.size(0), -1)
-                query_features = net(query_xs).view(query_xs.size(0), -1)
+                support_features = net(support_xs.cuda()).view(support_xs.size(0), -1)
+                query_features   = net(query_xs.cuda()).view(query_xs.size(0), -1)
             else:
-                feat_support, _ = net(support_xs, is_feat=True)
+                feat_support, _  = net(support_xs.cuda(), is_feat=True)
                 support_features = feat_support[-1].view(support_xs.size(0), -1)
-                feat_query, _ = net(query_xs, is_feat=True)
-                query_features = feat_query[-1].view(query_xs.size(0), -1)
+                feat_query, _    = net(query_xs.cuda(), is_feat=True)
+                query_features   = feat_query[-1].view(query_xs.size(0), -1)
 
             if is_norm:
                 support_features = normalize(support_features)
                 query_features = normalize(query_features)
 
             # Get sorted numeric labels, create a mapping that maps the order to actual label
-            unique_sorted_lbls = np.sort(np.unique(support_ys))
-            assert (unique_sorted_lbls == np.sort(np.unique(query_ys))).all()
-            vocab_novel = [label2human_novel[i] for i in unique_sorted_lbls]
-            vocab_base  = [name for name in label2human_base if name != '']
-            vocab_all   = vocab_base + vocab_novel
-            print("len(vocab): ", len(vocab_all))
-            # print("vocab: ", vocab_all)
-            orig2id = dict(zip(unique_sorted_lbls, len(vocab_base) + np.arange(len(unique_sorted_lbls))))
-            # id2orig = {v: k for k, v in orig2id.items()}
-            # for i in range(len(vocab_base)):
-            #     id2orig[i]=i
-            query_ys_id   = [orig2id[y] for y in query_ys.numpy()]
-            support_ys_id = [orig2id[y] for y in support_ys.numpy()]
+            vocab_base, vocab_all, vocab_novel, orig2id = get_vocabs(val_loader, test_loader, support_ys)
+            query_ys_id   = [orig2id[y] for y in query_ys]
+            support_ys_id = [orig2id[y] for y in support_ys]
 
             # Convert numpy
             support_features = support_features.detach().cpu().numpy()
@@ -482,10 +507,16 @@ def incremental_test(net, testloader, val_loader, alpha, use_logit=False, is_nor
                                                    (1-alpha) * query_features @ clf.coef_.transpose()], 1) # 75x64, (75x64 @ 64x5) # 75 x 69
             query_ys_pred = np.argmax(query_ys_pred_scores, 1)
 
+            if vis and idx == 0:
+                novel_info = [(idx, vocab_all[query_ys_id[i]], False, vocab_all[query_ys_pred[i]],  image_formatter(novelimgs[i,:,:,:]))  for i in range(len(query_ys_id))]
+                df = df.append(pd.DataFrame(novel_info, columns=df.columns), ignore_index=True)
+            acc_base.append(np.mean(acc_base_))
+            acc_novel.append(metrics.accuracy_score(query_ys_id, query_ys_pred))
+
             # Evaluate base class samples.
             acc_base_ = []
             for idb, (input, target, _) in enumerate(val_loader):
-                imgdata = input.detach().numpy()
+                baseimgs = input.detach().numpy()
                 input = input.float()
                 if torch.cuda.is_available():
                     input = input.cuda()
@@ -499,28 +530,13 @@ def incremental_test(net, testloader, val_loader, alpha, use_logit=False, is_nor
                 base_accs = metrics.accuracy_score(base_query_ys_pred, target)
                 acc_base_.append(base_accs)
                 if vis and idx == 0:
-                    base_info = [(idx, vocab_all[target[i]], True, vocab_all[base_query_ys_pred[i]], image_formatter(imgdata[i,:,:,:]))  for i in range(len(target))]
+                    base_info = [(idx, vocab_all[target[i]], True, vocab_all[base_query_ys_pred[i]], image_formatter(baseimgs[i,:,:,:]))  for i in range(len(target))]
                     df = df.append(pd.DataFrame(base_info, columns=df.columns), ignore_index=True)
 
-
-            if vis and idx == 0:
-                novel_info = [(idx, vocab_all[query_ys_id[i]], False, vocab_all[query_ys_pred[i]],  image_formatter(novelimg_data[i,:,:,:]))  for i in range(len(query_ys_id))]
-                df = df.append(pd.DataFrame(novel_info, columns=df.columns), ignore_index=True)
-            acc_base.append(np.mean(acc_base_))
-            acc_novel.append(metrics.accuracy_score(query_ys_id, query_ys_pred))
-            if idx > 200:
-                if vis:
-                    return df
-                return mean_confidence_interval(acc_novel), mean_confidence_interval(acc_base)
-
-def freeze_backbone_weights(backbone, opt):
-    if opt.freeze_backbone:
-        print("Freezing the backbone.")
-        for name, param in backbone.named_parameters():
-            param.requires_grad = False
-            if name.startswith("classifier.transform"):
-                print("Not frozen ", name)
-                param.requires_grad = True
+        if vis:
+            return df
+        else:
+            return mean_confidence_interval(acc_novel), mean_confidence_interval(acc_base)
 
 def meta_test(net, testloader, use_logit=True, is_norm=True, classifier='LR'):
     net = net.eval()
@@ -528,20 +544,17 @@ def meta_test(net, testloader, use_logit=True, is_norm=True, classifier='LR'):
 
     with torch.no_grad():
         for idx, data in tqdm(enumerate(testloader)):
-            support_xs, support_ys, query_xs, query_ys = data
+            support_xs, support_ys, query_xs, query_ys = drop_a_dim(data)
             support_xs = support_xs.cuda()
             query_xs = query_xs.cuda()
-            batch_size, _, height, width, channel = support_xs.size()
-            support_xs = support_xs.view(-1, height, width, channel)
-            query_xs = query_xs.view(-1, height, width, channel)
 
             if use_logit:
-                support_features = net(support_xs).view(support_xs.size(0), -1)
-                query_features = net(query_xs).view(query_xs.size(0), -1)
+                support_features = net(support_xs.cuda()).view(support_xs.size(0), -1)
+                query_features = net(query_xs.cuda()).view(query_xs.size(0), -1)
             else:
-                feat_support, _ = net(support_xs, is_feat=True)
+                feat_support, _ = net(support_xs.cuda(), is_feat=True)
                 support_features = feat_support[-1].view(support_xs.size(0), -1)
-                feat_query, _ = net(query_xs, is_feat=True)
+                feat_query, _ = net(query_xs.cuda(), is_feat=True)
                 query_features = feat_query[-1].view(query_xs.size(0), -1)
 
             if is_norm:
@@ -550,9 +563,6 @@ def meta_test(net, testloader, use_logit=True, is_norm=True, classifier='LR'):
 
             support_features = support_features.detach().cpu().numpy()
             query_features = query_features.detach().cpu().numpy()
-
-            support_ys = support_ys.view(-1).numpy()
-            query_ys = query_ys.view(-1).numpy()
 
             if classifier == 'LR':
                 clf = LogisticRegression(random_state=0, solver='lbfgs', max_iter=1000,
@@ -569,28 +579,3 @@ def meta_test(net, testloader, use_logit=True, is_norm=True, classifier='LR'):
             acc.append(metrics.accuracy_score(query_ys, query_ys_pred))
 
     return mean_confidence_interval(acc)
-
-
-def NN(support, support_ys, query):
-    """nearest classifier"""
-    support = np.expand_dims(support.transpose(), 0)
-    query = np.expand_dims(query, 2)
-
-    diff = np.multiply(query - support, query - support)
-    distance = diff.sum(1)
-    min_idx = np.argmin(distance, axis=1)
-    pred = [support_ys[idx] for idx in min_idx]
-    return pred
-
-
-def Cosine(support, support_ys, query):
-    """Cosine classifier"""
-    support_norm = np.linalg.norm(support, axis=1, keepdims=True)
-    support = support / support_norm
-    query_norm = np.linalg.norm(query, axis=1, keepdims=True)
-    query = query / query_norm
-
-    cosine_distance = query @ support.transpose()
-    max_idx = np.argmax(cosine_distance, axis=1)
-    pred = [support_ys[idx] for idx in max_idx]
-    return pred
