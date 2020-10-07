@@ -5,7 +5,7 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:volta:1
-#SBATCH --array=1-6
+#SBATCH --array=1
 #SBATCH --output=dumped/%A_%a.out
 #SBATCH --error=dumped/%A_%a.err
 #SBATCH --job-name=lil
@@ -35,7 +35,7 @@ TRLOSS="${PARAMS[1]}"
 MULTIPFC="${PARAMS[2]}"
 
 
-# Create log files.sc
+# Create log files
 LOG_STDOUT="${DUMPED_PATH}/${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.out"
 LOG_STDERR="${DUMPED_PATH}/${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.err"
 BACKBONE_PATH="${DUMPED_PATH}/ekin_dumped/resnet12_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain_layer_${LAYER}_multip_${MULTIPFC}/resnet12_last.pth"
@@ -54,7 +54,21 @@ python eval_incremental.py --model_path $BACKBONE_PATH \
                            --multip_fc $MULTIPFC \
                            --transformer_layer $LAYER > $LOG_STDOUT 2> $LOG_STDERR
                            
-                           
+# For debugging.                           
+# python eval_incremental.py --model_path dumped/ekin_dumped/resnet12_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain_layer_6_multip_0.1/resnet12_last.pth \
+#                            --data_root data \
+#                            --n_shots 1 \
+#                            --eval_mode few-shot-language-incremental \
+#                            --classifier description-linear \
+#                            --novel_epochs 5 \
+#                            --learning_rate 0.01 \
+#                            --freeze_backbone_at 1 \
+#                            --lmbd_reg_transform_w 0.01 \
+#                            --target_train_loss 0.6 \
+#                            --prefix_label \
+#                            --multip_fc 0.1 \
+#                            --transformer_layer 6
+
 
 # Checklist to run an array job.
 # 1. Make sure total number of experiments matches the array param in sbatch.
