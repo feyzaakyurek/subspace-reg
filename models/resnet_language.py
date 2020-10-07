@@ -156,7 +156,7 @@ class LangLinearClassifier(nn.Module):
         super(LangLinearClassifier, self).__init__()
         self.vocab = vocab
         self.dim = dim
-        self.multip_fc = nn.Parameter(torch.LongTensor([multip_fc]), requires_grad=False)
+        self.multip_fc = nn.Parameter(torch.FloatTensor([multip_fc]), requires_grad=False)
         bound = 1 / math.sqrt(cdim)
         assert os.path.exists(load_embeds)
 
