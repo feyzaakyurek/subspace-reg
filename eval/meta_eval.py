@@ -81,7 +81,7 @@ def get_vocabs(base_loader=None, novel_loader=None, query_ys=None):
     vocab_all = []
     vocab_base = None
     if base_loader is not None:
-        label2human_base = base_loader
+        label2human_base = base_loader.dataset.label2human
         vocab_base  = [name for name in label2human_base if name != '']
         vocab_all  += vocab_base
 
@@ -93,7 +93,7 @@ def get_vocabs(base_loader=None, novel_loader=None, query_ys=None):
         vocab_novel = [label2human_novel[i] for i in novel_ids]
         orig2id = dict(zip(novel_ids, len(vocab_base) + np.arange(len(novel_ids))))
         vocab_all += vocab_novel
-
+    print("len(vocab): ", len(vocab_all))
     return vocab_base, vocab_all, vocab_novel, orig2id
 
 def zero_shot_incremental_test(net, meta_valloader, base_val_loader, opt, alpha, is_norm=False, vis=False):
@@ -481,7 +481,7 @@ def incremental_test(net, testloader, val_loader, alpha, use_logit=False, is_nor
     net = net.eval()
     with torch.no_grad():
         for idx, data in tqdm(enumerate(testloader)):
-            if idx > 200:
+            if idx > 5:
                 break
             support_xs, support_ys, query_xs, query_ys = drop_a_dim(data)
             novelimgs = query_xs.detach().numpy()
