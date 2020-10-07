@@ -131,10 +131,13 @@ def parse_option():
 def main():
 
     opt = parse_option()
+    print("************* Training arguments *************")
 #     run.config.update(opt)
-
-    # test loader
     args = opt
+    for arg in vars(args):
+        print(arg, getattr(args, arg))
+    print("End of arguments.\n")
+    
     
     if opt.dataset == 'miniImageNet':
         train_trans, test_trans = transforms_test_options[opt.transform]
@@ -235,7 +238,7 @@ def main():
     model = create_model(opt.model, n_cls, opt, vocab=vocab, dataset=opt.dataset)
     ckpt = torch.load(opt.model_path)
     print("Loading model...")
-    model.load_state_dict(ckpt['model'])
+    model.load_state_dict(ckpt['model'], strict=False)
 
     if torch.cuda.is_available():
         model = model.cuda()
@@ -340,6 +343,7 @@ def main():
         avg_score = (base[0]+novel[0])/2
         print('val_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel[0], novel[1], val_time))
         print('val_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base[0], base[1], val_time))
+        print('val_acc_average: {:.4f}'.format(avg_score))
 #         run.log({
 #            'val_acc_novel_avg': novel[0],
 #            'val_acc_base_avg': base[0],
@@ -358,6 +362,7 @@ def main():
         avg_score = (base[0]+novel[0])/2
         print('test_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel[0], novel[1], test_time))
         print('test_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base[0], base[1], test_time))
+        print('test_acc_average: {:.4f}'.format(avg_score))
 #         run.log({
 #            'test_acc_novel_avg': novel[0],
 #            'test_acc_base_avg': base[0],
