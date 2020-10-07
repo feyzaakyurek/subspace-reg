@@ -44,8 +44,8 @@ def image_formatter(im):
     decoded = base64.b64encode(rawBytes.read()).decode()
     return f'<img src="data:image/jpeg;base64,{decoded}">'
 
-def freeze_backbone_weights(backbone, opt, exclude=['classifier.transform']):
-    if opt.freeze_backbone:
+def freeze_backbone_weights(backbone, opt, epoch, exclude=['classifier.transform']):
+    if opt.freeze_backbone_at == epoch:
         print("Freezing the backbone.")
         for name, param in backbone.named_parameters():
             param.requires_grad = False
@@ -198,8 +198,15 @@ def few_shot_language_incremental_test(net, ckpt, optimizer, criterion, meta_val
     basenet = copy.deepcopy(net).cuda()
     embed = basenet.classifier.embed
     trns  = basenet.classifier.transform_W
+    embed.requires_grad = False
+    trns.requires_grad = False
     orig_classifier_weights = embed @ trns if opt.lmbd_reg_transform_w else None
+    trns.requires_grad = True # TODO
 
+    if basenet.classifier.multip_fc == 0: # TODO
+        print("A LARGE WARNING!!! Loaded multipfc is 0, setting it to {}!!!".format(opt.multip_fc))
+        basenet.classifier.multip_fc = nn.Parameter(torch.FloatTensor([opt.multip_fc]), requires_grad=False)
+#     ipdb.set_trace()
     for idx, data in enumerate(meta_valloader):
         support_xs, support_ys, query_xs, query_ys = drop_a_dim(data)
         novelimgs = query_xs.detach().numpy()
@@ -211,7 +218,7 @@ def few_shot_language_incremental_test(net, ckpt, optimizer, criterion, meta_val
         support_ys_id = torch.LongTensor([orig2id[y] for y in support_ys])
 
         net = copy.deepcopy(basenet)
-        freeze_backbone_weights(net, opt)
+#         freeze_backbone_weights(net, opt, epoch)
         net.train()
 
 
@@ -222,7 +229,7 @@ def few_shot_language_incremental_test(net, ckpt, optimizer, criterion, meta_val
             # Create the language classifier which uses only novel class names' embeddings
             dim = opt.word_embed_size
             embed_pth = os.path.join(opt.word_embed_path, "{0}_dim{1}.pickle".format(opt.dataset, dim))
-            dummy_classifier = LangLinearClassifier(human_label_list,
+            dummy_classifier = LangLinearClassifier(vocab_novel,
                                                     embed_pth,
                                                     dim=dim,
                                                     cdim=640,
@@ -237,7 +244,7 @@ def few_shot_language_incremental_test(net, ckpt, optimizer, criterion, meta_val
                                                                                  opt.desc_embed_model,
                                                                                  opt.transformer_layer,
                                                                                  opt.prefix_label))
-            dummy_classifier = LangLinearClassifier(human_label_list,
+            dummy_classifier = LangLinearClassifier(vocab_novel,
                                                     embed_pth,
                                                     cdim=640,
                                                     dim=None,
@@ -254,11 +261,11 @@ def few_shot_language_incremental_test(net, ckpt, optimizer, criterion, meta_val
                                         requires_grad=False) # TODO:CHECK DIM.
 
         # Validate before training.
-        test_acc, test_acc_top5, test_loss = validate_fine_tune(query_xs, query_ys_id, net, criterion, opt)
+        test_acc, test_acc_top5, test_loss, _ = validate_fine_tune(query_xs, query_ys_id, net, criterion, opt)
         print('{:25} {:.4f}\n'.format("Novel incremental acc before fine-tune:",test_acc.item()))
 
 
-        # Evaluate base samples with the updated network
+        # Evaluate base samples before updating the network
         acc_base_ = eval_base(net, base_val_loader, criterion, vocab_all) # where to update df for this evaluations???
 
         print('{:25} {:.4f}\n'.format("Base incremental acc before fine-tune:",acc_base_))
@@ -273,10 +280,9 @@ def few_shot_language_incremental_test(net, ckpt, optimizer, criterion, meta_val
         epoch = 1
         while train_loss > opt.target_train_loss or epoch < opt.novel_epochs + 1:
             # Freeze backbone except the classifier
-            freeze_backbone_weights(net, epoch, opt)
+            freeze_backbone_weights(net, opt, epoch)
 
             train_acc, train_loss = fine_tune_novel(epoch, support_xs, support_ys_id, net,
-
                                                     criterion, optimizer, orig_classifier_weights, opt)
             test_acc, test_acc_top5, test_loss, query_ys_pred = validate_fine_tune(query_xs, query_ys_id, net, criterion, opt)
             if vis and idx == 0:
@@ -287,9 +293,9 @@ def few_shot_language_incremental_test(net, ckpt, optimizer, criterion, meta_val
 
         # Evaluate base samples with the updated network
         if vis and idx == 0:
-            acc_base_, base_query_ys_preds = eval_base(net, base_val_loader, criterion, vocab_all, df=df)
+            acc_base_ = eval_base(net, base_val_loader, criterion, vocab_all, df=df)
         else:
-            acc_base_, base_query_ys_preds = eval_base(net, base_val_loader, criterion, vocab_all)
+            acc_base_ = eval_base(net, base_val_loader, criterion, vocab_all)
 
 
         acc_base.append(acc_base_)
@@ -325,6 +331,7 @@ def few_shot_language_incremental_test(net, ckpt, optimizer, criterion, meta_val
 
 def fine_tune_novel(epoch, support_xs, support_ys_id, net, criterion, optimizer, orig_classifier_weights, opt):
     """One epoch training, single batch training."""
+#     ipdb.set_trace()
     support_xs = support_xs.float()
     if torch.cuda.is_available():
         support_xs = support_xs.cuda()
@@ -392,7 +399,7 @@ def eval_base(net, base_val_loader, criterion, vocab_all, df=None):
             if df is not None:
                 base_info = [(idx, vocab_all[target[i]], True, vocab_all[ys_pred[i]], image_formatter(imgdata[i,:,:,:]))  for i in range(len(target))]
                 df = df.append(pd.DataFrame(base_info, columns=df.columns), ignore_index=True)
-    return np.mean(acc_base_), base_preds
+    return np.mean(acc_base_)
 
 def zero_shot_test(net, loader, opt, is_norm=True, use_logit=False, novel_only=True, vis=False, **kwargs):
     if vis:
