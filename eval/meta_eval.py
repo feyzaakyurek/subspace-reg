@@ -185,8 +185,8 @@ def drop_a_dim(data): #TODO why do we need this in the first place?
     batch_size, _, height, width, channel = support_xs.size()
     support_xs = support_xs.view(-1, height, width, channel)
     query_xs = query_xs.view(-1, height, width, channel)
-    support_ys = support_ys.view(-1).numpy() # TODO
-    query_ys = query_ys.view(-1).numpy()
+    support_ys = support_ys.view(-1).detach().numpy() # TODO
+    query_ys = query_ys.view(-1).detach().numpy()
     return (support_xs, support_ys, query_xs, query_ys)
 
 def few_shot_language_incremental_test(net, ckpt, optimizer, criterion, meta_valloader, base_val_loader, opt,  vis=False):
@@ -229,10 +229,10 @@ def few_shot_language_incremental_test(net, ckpt, optimizer, criterion, meta_val
                                                     bias=opt.lang_classifier_bias,
                                                     verbose=False,
                                                     multip_fc=opt.multip_fc) # TODO!!
-            
+
         else: # Description linear classifier
-            
-            embed_pth = os.path.join(opt.description_embed_path, 
+
+            embed_pth = os.path.join(opt.description_embed_path,
                                      "{0}_{1}_layer{2}_prefix_{3}.pickle".format(opt.dataset,
                                                                                  opt.desc_embed_model,
                                                                                  opt.transformer_layer,
@@ -274,8 +274,8 @@ def few_shot_language_incremental_test(net, ckpt, optimizer, criterion, meta_val
         while train_loss > opt.target_train_loss or epoch < opt.novel_epochs + 1:
             # Freeze backbone except the classifier
             freeze_backbone_weights(net, epoch, opt)
-        
-            train_acc, train_loss = fine_tune_novel(epoch, support_xs, support_ys_id, net, 
+
+            train_acc, train_loss = fine_tune_novel(epoch, support_xs, support_ys_id, net,
 
                                                     criterion, optimizer, orig_classifier_weights, opt)
             test_acc, test_acc_top5, test_loss, query_ys_pred = validate_fine_tune(query_xs, query_ys_id, net, criterion, opt)
@@ -286,7 +286,7 @@ def few_shot_language_incremental_test(net, ckpt, optimizer, criterion, meta_val
         acc_novel.append(test_acc.item())
 
         # Evaluate base samples with the updated network
-        if vis and idx == 0
+        if vis and idx == 0:
             acc_base_, base_query_ys_preds = eval_base(net, base_val_loader, criterion, vocab_all, df=df)
         else:
             acc_base_, base_query_ys_preds = eval_base(net, base_val_loader, criterion, vocab_all)
@@ -475,6 +475,7 @@ def incremental_test(net, testloader, val_loader, alpha, use_logit=False, is_nor
     acc_base = []
     if vis:
         df = pd.DataFrame(columns=['idx', 'class', 'isbase', 'predicted', 'img'])
+
     assert classifier == 'LR'
 
     net = net.eval()
@@ -482,9 +483,8 @@ def incremental_test(net, testloader, val_loader, alpha, use_logit=False, is_nor
         for idx, data in tqdm(enumerate(testloader)):
             if idx > 200:
                 break
-
             support_xs, support_ys, query_xs, query_ys = drop_a_dim(data)
-            novelimgs = query_xs.numpy()
+            novelimgs = query_xs.detach().numpy()
 
             if use_logit:
                 support_features = net(support_xs.cuda()).view(support_xs.size(0), -1)
@@ -500,7 +500,7 @@ def incremental_test(net, testloader, val_loader, alpha, use_logit=False, is_nor
                 query_features = normalize(query_features)
 
             # Get sorted numeric labels, create a mapping that maps the order to actual label
-            vocab_base, vocab_all, vocab_novel, orig2id = get_vocabs(val_loader, test_loader, support_ys)
+            vocab_base, vocab_all, vocab_novel, orig2id = get_vocabs(val_loader, testloader, support_ys)
             query_ys_id   = [orig2id[y] for y in query_ys]
             support_ys_id = [orig2id[y] for y in support_ys]
 
@@ -517,10 +517,10 @@ def incremental_test(net, testloader, val_loader, alpha, use_logit=False, is_nor
                                                    (1-alpha) * query_features @ clf.coef_.transpose()], 1) # 75x64, (75x64 @ 64x5) # 75 x 69
             query_ys_pred = np.argmax(query_ys_pred_scores, 1)
 
+
             if vis and idx == 0:
                 novel_info = [(idx, vocab_all[query_ys_id[i]], False, vocab_all[query_ys_pred[i]],  image_formatter(novelimgs[i,:,:,:]))  for i in range(len(query_ys_id))]
                 df = df.append(pd.DataFrame(novel_info, columns=df.columns), ignore_index=True)
-            acc_base.append(np.mean(acc_base_))
             acc_novel.append(metrics.accuracy_score(query_ys_id, query_ys_pred))
 
             # Evaluate base class samples.
@@ -528,12 +528,9 @@ def incremental_test(net, testloader, val_loader, alpha, use_logit=False, is_nor
             for idb, (input, target, _) in enumerate(val_loader):
                 baseimgs = input.detach().numpy()
                 input = input.float()
-                if torch.cuda.is_available():
-                    input = input.cuda()
-                base_query_features = net(input).view(input.size(0), -1) # 32x64
+                base_query_features = net(input.cuda()).view(input.size(0), -1) # 32x64
                 base_query_features = base_query_features.detach().cpu().numpy()
-                target = target.view(-1).numpy()
-
+                target = target.view(-1).detach().numpy()
                 base_query_ys_pred_scores = np.concatenate([alpha * base_query_features,
                                                             (1-alpha) * (base_query_features @ clf.coef_.transpose())], 1) # 32x64, (32x64 @ 64x5) # 32 x 69
                 base_query_ys_pred = np.argmax(base_query_ys_pred_scores, 1)
@@ -542,7 +539,7 @@ def incremental_test(net, testloader, val_loader, alpha, use_logit=False, is_nor
                 if vis and idx == 0:
                     base_info = [(idx, vocab_all[target[i]], True, vocab_all[base_query_ys_pred[i]], image_formatter(baseimgs[i,:,:,:]))  for i in range(len(target))]
                     df = df.append(pd.DataFrame(base_info, columns=df.columns), ignore_index=True)
-                    
+            acc_base.append(np.mean(acc_base_))
         if vis:
             return df
         else:
