@@ -93,9 +93,9 @@ def parse_option():
         parser.add_argument('--lang_classifier_bias', action='store_true',
                             help='Use of bias in lang classifier.')
         parser.add_argument('--multip_fc', type=float, default=0.05)
-        
+
     if parser.parse_known_args()[0].eval_mode in ['zero-shot-incremental']:
-        parser.add_argument('--num_novel_combs', type=int, default=0.05, 
+        parser.add_argument('--num_novel_combs', type=int, default=0.05,
                             help='Number of combinations of novel/test classes to evaluate base samples against:)')
 
     if parser.parse_known_args()[0].eval_mode == "few-shot-language-incremental":
@@ -140,8 +140,8 @@ def main():
     for arg in vars(args):
         print(arg, getattr(args, arg))
     print("End of arguments.\n")
-    
-    
+
+
 
     if opt.dataset == 'miniImageNet':
         train_trans, test_trans = transforms_test_options[opt.transform]
@@ -250,7 +250,7 @@ def main():
 
 
 #     run.watch(model)
-    
+
     # evaluation
 
     if opt.eval_mode == "few-shot-incremental":
@@ -326,27 +326,16 @@ def main():
 
     elif opt.eval_mode == "few-shot-language-incremental":
         assert opt.classifier in ["lang-linear", "description-linear"]
-        # optimizer
-        if opt.adam:
-            optimizer = torch.optim.Adam(model.parameters(),
-                                         lr=opt.learning_rate,
-                                         weight_decay=0.0005)
-        else:
-            optimizer = optim.SGD(model.parameters(),
-                                  lr=opt.learning_rate,
-                                  momentum=opt.momentum,
-                                  weight_decay=opt.weight_decay) # TODO anything to load from ckpt?
-        criterion = nn.CrossEntropyLoss()
 
+        criterion = nn.CrossEntropyLoss()
         start = time.time()
         opt.split = "val"
-        novel, base = few_shot_language_incremental_test(model, 
-                                                         ckpt, 
-                                                         optimizer, 
-                                                         criterion, 
-                                                         meta_valloader, 
-                                                         base_val_loader, 
-                                                         opt) 
+        novel, base = few_shot_language_incremental_test(model,
+                                                         ckpt,
+                                                         criterion,
+                                                         meta_valloader,
+                                                         base_val_loader,
+                                                         opt)
         val_time = time.time() - start
         avg_score = (base[0]+novel[0])/2
         print('val_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel[0], novel[1], val_time))
@@ -356,17 +345,16 @@ def main():
 #            'val_acc_novel_avg': novel[0],
 #            'val_acc_base_avg': base[0],
 #            'val_acc_avg_both': avg_score})
-                  
+
         start = time.time()
         opt.split = "test"
-        novel, base = few_shot_language_incremental_test(model, 
-                                                         ckpt, 
-                                                         optimizer, 
-                                                         criterion, 
-                                                         meta_testloader, 
-                                                         base_test_loader, 
-                                                         opt) 
-        test_time = time.time() - start       
+        novel, base = few_shot_language_incremental_test(model,
+                                                         ckpt,
+                                                         criterion,
+                                                         meta_testloader,
+                                                         base_test_loader,
+                                                         opt)
+        test_time = time.time() - start
         avg_score = (base[0]+novel[0])/2
         print('test_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel[0], novel[1], test_time))
         print('test_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base[0], base[1], test_time))
