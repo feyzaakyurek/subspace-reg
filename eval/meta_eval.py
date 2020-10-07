@@ -76,6 +76,7 @@ def Cosine(support, support_ys, query):
     return pred
 
 
+
 def get_vocabs(base_loader=None, novel_loader=None, query_ys=None):
     vocab_all = []
     vocab_base = None
@@ -147,11 +148,13 @@ def zero_shot_incremental_test(net, meta_valloader, base_val_loader, opt, alpha,
             # Get predictions
             novel_ys_pred = np.argmax(novel_ys_pred_scores, 1)
             acc_novel.append(metrics.accuracy_score(novel_ys_pred, query_ys_id))
+
             if vis and idx == 0:
                 novel_info = [(idx, vocab_all[query_ys_id[i]], False, vocab_all[novel_ys_pred[i]],  image_formatter(novelimgs[i,:,:,:]))  for i in range(len(query_ys_id))]
                 df = df.append(pd.DataFrame(novel_info, columns=df.columns), ignore_index=True)
             # Important to evaluate base class samples against different combinations of novel classes.
 #             if idx < opt.num_novel_combs:
+
             acc_base_ = []
             for idb, (input, target, _) in enumerate(base_val_loader):
                 imgdata = input.detach().numpy()
@@ -176,6 +179,7 @@ def zero_shot_incremental_test(net, meta_valloader, base_val_loader, opt, alpha,
         return df
     return mean_confidence_interval(acc_novel), mean_confidence_interval(acc_base)
 
+
 def drop_a_dim(data): #TODO why do we need this in the first place?
     support_xs, support_ys, query_xs, query_ys = data
     batch_size, _, height, width, channel = support_xs.size()
@@ -185,7 +189,7 @@ def drop_a_dim(data): #TODO why do we need this in the first place?
     query_ys = query_ys.view(-1).numpy()
     return (support_xs, support_ys, query_xs, query_ys)
 
-def few_shot_language_incremental_test(net, ckpt, optimizer, criterion, meta_valloader, base_val_loader, opt, run, vis=False):
+def few_shot_language_incremental_test(net, ckpt, optimizer, criterion, meta_valloader, base_val_loader, opt,  vis=False):
     if vis:
         df = pd.DataFrame(columns=['idx', 'class', 'isbase', 'predicted', 'img'])
 
@@ -201,6 +205,7 @@ def few_shot_language_incremental_test(net, ckpt, optimizer, criterion, meta_val
         novelimgs = query_xs.detach().numpy()
 
         # Get sorted numeric labels, create a mapping that maps the order to actual label
+
         vocab_base, vocab_all, vocab_novel, orig2id = get_vocabs(base_val_loader, meta_valloader, support_ys)
         query_ys_id = torch.LongTensor([orig2id[y] for y in query_ys])
         support_ys_id = torch.LongTensor([orig2id[y] for y in support_ys])
@@ -208,6 +213,7 @@ def few_shot_language_incremental_test(net, ckpt, optimizer, criterion, meta_val
         net = copy.deepcopy(basenet)
         freeze_backbone_weights(net, opt)
         net.train()
+
 
         classifier = net.classifier
 
@@ -222,10 +228,11 @@ def few_shot_language_incremental_test(net, ckpt, optimizer, criterion, meta_val
                                                     cdim=640,
                                                     bias=opt.lang_classifier_bias,
                                                     verbose=False,
-                                                    multip_fc=classifier.multip_fc)
-
+                                                    multip_fc=opt.multip_fc) # TODO!!
+            
         else: # Description linear classifier
-            embed_pth = os.path.join(opt.description_embed_path,
+            
+            embed_pth = os.path.join(opt.description_embed_path, 
                                      "{0}_{1}_layer{2}_prefix_{3}.pickle".format(opt.dataset,
                                                                                  opt.desc_embed_model,
                                                                                  opt.transformer_layer,
@@ -237,7 +244,7 @@ def few_shot_language_incremental_test(net, ckpt, optimizer, criterion, meta_val
                                                     bias=opt.lang_classifier_bias,
                                                     description=True,
                                                     verbose=False,
-                                                    multip_fc=classifier.multip_fc)
+                                                    multip_fc=opt.multip_fc)
 
         novel_embeds = dummy_classifier.embed.cuda()
 
@@ -250,8 +257,10 @@ def few_shot_language_incremental_test(net, ckpt, optimizer, criterion, meta_val
         test_acc, test_acc_top5, test_loss = validate_fine_tune(query_xs, query_ys_id, net, criterion, opt)
         print('{:25} {:.4f}\n'.format("Novel incremental acc before fine-tune:",test_acc.item()))
 
+
         # Evaluate base samples with the updated network
         acc_base_ = eval_base(net, base_val_loader, criterion, vocab_all) # where to update df for this evaluations???
+
         print('{:25} {:.4f}\n'.format("Base incremental acc before fine-tune:",acc_base_))
 
         # Retrieve original transform_W if regularization
@@ -263,8 +272,11 @@ def few_shot_language_incremental_test(net, ckpt, optimizer, criterion, meta_val
         train_loss = 15
         epoch = 1
         while train_loss > opt.target_train_loss or epoch < opt.novel_epochs + 1:
-#         for epoch in range(1, opt.novel_epochs + 1):
-            train_acc, train_loss = fine_tune_novel(epoch, support_xs, support_ys_id, net,
+            # Freeze backbone except the classifier
+            freeze_backbone_weights(net, epoch, opt)
+        
+            train_acc, train_loss = fine_tune_novel(epoch, support_xs, support_ys_id, net, 
+
                                                     criterion, optimizer, orig_classifier_weights, opt)
             test_acc, test_acc_top5, test_loss, query_ys_pred = validate_fine_tune(query_xs, query_ys_id, net, criterion, opt)
             if vis and idx == 0:
@@ -302,16 +314,12 @@ def few_shot_language_incremental_test(net, ckpt, optimizer, criterion, meta_val
                   acc_base_,
                   "Average:",
                   avg_score))
-        run.log({'idx':idx,
-                 "{}_novel_acc".format(opt.split):test_acc.item(),
-                 "{}_base_acc".format(opt.split):acc_base_,
-                 "{}_average".format(opt.split):avg_score})
 
-#         if idx >= opt.num_novel_combs:
     if vis:
         return df
     else:
         return mean_confidence_interval(acc_novel), mean_confidence_interval(acc_base)
+
 
 
 
@@ -365,6 +373,7 @@ def validate_fine_tune(query_xs, query_ys_id, net, criterion, opt):
                   'Acc@1 {:10.3f}\t'
                   'Acc@5 {:10.3f}'.format(
                    loss.item(), acc1[0], acc5[0]))
+
     return acc1[0], acc5[0], loss.item(), query_ys_pred
 
 def eval_base(net, base_val_loader, criterion, vocab_all, df=None):
@@ -375,6 +384,7 @@ def eval_base(net, base_val_loader, criterion, vocab_all, df=None):
             imgdata = input.detach().numpy()
             input  = input.float().cuda()
             output = net(input).detach().cpu()
+
             loss = criterion(output, target)
             acc1, acc5 = accuracy(output, target, topk=(1, 5))
             acc_base_.append(acc1[0].item())
@@ -532,11 +542,13 @@ def incremental_test(net, testloader, val_loader, alpha, use_logit=False, is_nor
                 if vis and idx == 0:
                     base_info = [(idx, vocab_all[target[i]], True, vocab_all[base_query_ys_pred[i]], image_formatter(baseimgs[i,:,:,:]))  for i in range(len(target))]
                     df = df.append(pd.DataFrame(base_info, columns=df.columns), ignore_index=True)
-
+                    
         if vis:
             return df
         else:
             return mean_confidence_interval(acc_novel), mean_confidence_interval(acc_base)
+
+
 
 def meta_test(net, testloader, use_logit=True, is_norm=True, classifier='LR'):
     net = net.eval()

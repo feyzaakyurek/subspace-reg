@@ -139,6 +139,7 @@ def create_and_save_descriptions(opt, vocab):
     if os.path.exists(embed_pth):
         return
     else:
+        print("Path {} not found.".format(embed_pth))
         with torch.no_grad():
             print("Creating tokenizer...")
             tokenizer = AutoTokenizer.from_pretrained(opt.desc_embed_model)
