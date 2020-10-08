@@ -9,6 +9,7 @@ import time
 import ipdb
 import os
 import pickle
+import subprocess
 
 import numpy as np
 import torch
@@ -56,15 +57,15 @@ def parse_option():
                         help='Number of classes for doing each classification run')
     parser.add_argument('--n_shots', type=int, default=1, metavar='N',
                         help='Number of shots in test')
-    parser.add_argument('--n_queries', type=int, default=15, metavar='N',
+    parser.add_argument('--n_queries', type=int, default=5, metavar='N',
                         help='Number of query in test')
     parser.add_argument('--n_aug_support_samples', default=5, type=int,
                         help='The number of augmented samples for each meta test sample')
-    parser.add_argument('--num_workers', type=int, default=3, metavar='N',
+    parser.add_argument('--num_workers', type=int, default=4, metavar='N',
                         help='Number of workers for dataloader')
     parser.add_argument('--test_batch_size', type=int, default=1, metavar='test_batch_size',
                         help='Size of test batch)')
-    parser.add_argument('--test_base_batch_size', type=int, default=64, metavar='test_batch_size',
+    parser.add_argument('--test_base_batch_size', type=int, default=50, metavar='test_batch_size',
                         help='Size of test batch)')
     parser.add_argument('--eval_mode', type=str,
                         choices=['few-shot', 'few-shot-incremental', 'zero-shot',
@@ -81,6 +82,12 @@ def parse_option():
                             help="Alpha is the fraction to multiply base scores with. End is the beginning of the range to try.")
         parser.add_argument("--inc_alpha", type=restricted_float, default="0.01",
                             help="Alpha is the fraction to multiply base scores with. Inc is increment.")
+        
+    if parser.parse_known_args()[0].eval_mode in ["zero-shot-incremental",
+                                                  "few-shot-incremental",
+                                                  "few-shot-language-incremental"]:
+        parser.add_argument("--neval_episodes", type=int, default=2000,
+                            help="Number of evaluation episodes both for base and novel.")
 
 
     if parser.parse_known_args()[0].classifier in ["lang-linear", "description-linear"]:
@@ -134,6 +141,12 @@ def parse_option():
 def main():
 
     opt = parse_option()
+    
+    # Add git commit hash
+    process = subprocess.Popen(['git', 'rev-parse', '--short', 'HEAD'], shell=False, stdout=subprocess.PIPE)
+    git_head_hash = process.communicate()[0].strip()
+    opt.git_head_hash = git_head_hash.decode()
+    
     print("************* Training arguments *************")
 #     run.config.update(opt)
     args = opt
@@ -153,13 +166,13 @@ def main():
         # load base evaluation dataset
         base_val_loader = DataLoader(ImageNet(args=opt, partition='val', transform=test_trans),
                                      batch_size=opt.test_base_batch_size // 2,
-                                     shuffle=False,
+                                     shuffle=True,
                                      drop_last=False,
                                      num_workers=opt.num_workers // 2)
 
         base_test_loader = DataLoader(ImageNet(args=opt, partition='test', transform=test_trans),
                                       batch_size=opt.test_base_batch_size // 2,
-                                      shuffle=False,
+                                      shuffle=True,
                                       drop_last=False,
                                       num_workers=opt.num_workers // 2)
 
@@ -167,13 +180,13 @@ def main():
                                                   train_transform=train_trans,
                                                   test_transform=test_trans,
                                                   fix_seed=True),
-                                     batch_size=opt.test_batch_size, shuffle=False, drop_last=False,
+                                     batch_size=opt.test_batch_size, shuffle=True, drop_last=False,
                                      num_workers=opt.num_workers)
         meta_valloader = DataLoader(MetaImageNet(args=opt, partition='val',
                                                  train_transform=train_trans,
                                                  test_transform=test_trans,
                                                  fix_seed=True),
-                                    batch_size=opt.test_batch_size, shuffle=False, drop_last=False,
+                                    batch_size=opt.test_batch_size, shuffle=True, drop_last=False,
                                     num_workers=opt.num_workers)
         if opt.use_trainval:
             n_cls = 80

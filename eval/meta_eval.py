@@ -207,7 +207,17 @@ def few_shot_language_incremental_test(net, ckpt, criterion, meta_valloader, bas
     trns  = basenet.classifier.transform_W.clone().detach().requires_grad_(False)
     orig_classifier_weights = embed @ trns if opt.lmbd_reg_transform_w else None
 
-    for idx, data in enumerate(meta_valloader):
+    base_valloader_it = iter(base_val_loader)
+    meta_valloader_it = iter(meta_valloader)
+#     for idx, data in enumerate(meta_valloader):
+    for idx in range(opt.neval_episodes):
+        print("\n**** Iteration {}/{} ****\n".format(idx, opt.neval_episodes))
+        try:
+            data = next(meta_valloader_it)
+        except StopIteration:
+            meta_valloader_it = iter(meta_valloader)
+            data = next(meta_valloader_it)
+#         ipdb.set_trace()    
         support_xs, support_ys, query_xs, query_ys = drop_a_dim(data)
         novelimgs = query_xs.detach().numpy()
 
@@ -264,9 +274,9 @@ def few_shot_language_incremental_test(net, ckpt, criterion, meta_valloader, bas
 
 
         # Evaluate base samples before updating the network
-        acc_base_ = eval_base(net, base_val_loader, criterion, vocab_all) # where to update df for this evaluations???
+#         acc_base_ = eval_base(net, base_val_loader, criterion, vocab_all) # where to update df for this evaluations???
 
-        print('{:25} {:.4f}\n'.format("Base incremental acc before fine-tune:",acc_base_))
+#         print('{:25} {:.4f}\n'.format("Base incremental acc before fine-tune:",acc_base_))
 
         # Retrieve original transform_W if regularization
 #         orig_transform_W = ckpt['model']['classifier.transform_W'] if opt.lmbd_reg_transform_w else None
@@ -276,7 +286,7 @@ def few_shot_language_incremental_test(net, ckpt, criterion, meta_valloader, bas
         # routine: fine-tuning for novel classes
         train_loss = 15
         epoch = 1
-        freeze_backbone_weights(net, opt, epoch)
+        
         # optimizer
         if opt.adam:
             optimizer = torch.optim.Adam(net.parameters(),
@@ -287,7 +297,10 @@ def few_shot_language_incremental_test(net, ckpt, criterion, meta_valloader, bas
                                   lr=opt.learning_rate,
                                   momentum=opt.momentum,
                                   weight_decay=opt.weight_decay) # TODO anything to load from ckpt?
+            
+        
         while train_loss > opt.target_train_loss or epoch < opt.novel_epochs + 1:
+            freeze_backbone_weights(net, opt, epoch)
             train_acc, train_loss = fine_tune_novel(epoch,
                                                     support_xs,
                                                     support_ys_id,
@@ -302,16 +315,23 @@ def few_shot_language_incremental_test(net, ckpt, criterion, meta_valloader, bas
                                                                                    criterion,
                                                                                    opt)
             if vis and idx == 0:
-                novel_info = [(idx, vocab_all[query_ys_id[i]], False, vocab_all[query_ys_pred[i]],  image_formatter(novelimgs[i,:,:,:]))  for i in range(len(query_ys_id))]
+                novel_info = [(idx, vocab_all[query_ys_id[i]], False, vocab_all[query_ys_pred[i]],  
+                               image_formatter(novelimgs[i,:,:,:]))  for i in range(len(query_ys_id))]
                 df = df.append(pd.DataFrame(novel_info, columns=df.columns), ignore_index=True)
             epoch += 1
         acc_novel.append(test_acc.item())
+        
+        try:
+            base_batch = next(base_valloader_it)
+        except StopIteration:
+            base_valloader_it = iter(base_val_loader)
+            base_batch = next(base_valloader_it)
 
         # Evaluate base samples with the updated network
         if vis and idx == 0:
-            acc_base_ = eval_base(net, base_val_loader, criterion, vocab_all, df=df)
+            acc_base_ = eval_base(net, base_batch, criterion, vocab_all, df=df)
         else:
-            acc_base_ = eval_base(net, base_val_loader, criterion, vocab_all)
+            acc_base_ = eval_base(net, base_batch, criterion, vocab_all)
 
 
         acc_base.append(acc_base_)
@@ -399,22 +419,24 @@ def validate_fine_tune(query_xs, query_ys_id, net, criterion, opt):
 
     return acc1[0], acc5[0], loss.item(), query_ys_pred
 
-def eval_base(net, base_val_loader, criterion, vocab_all, df=None):
+def eval_base(net, base_batch, criterion, vocab_all, df=None):
     acc_base_ = []
     net.eval()
     with torch.no_grad():
-        for idb, (input, target, _) in enumerate(base_val_loader):
-            imgdata = input.detach().numpy()
-            input  = input.float().cuda()
-            output = net(input).detach().cpu()
+#         for idb, (input, target, _) in enumerate(base_val_loader):
+        input, target, _ = base_batch
+        imgdata = input.detach().numpy()
+        input  = input.float().cuda()
+        output = net(input).detach().cpu()
 
-            loss = criterion(output, target)
-            acc1, acc5 = accuracy(output, target, topk=(1, 5))
-            acc_base_.append(acc1[0].item())
-            ys_pred = torch.argmax(output, dim=1).numpy()
-            if df is not None:
-                base_info = [(idx, vocab_all[target[i]], True, vocab_all[ys_pred[i]], image_formatter(imgdata[i,:,:,:]))  for i in range(len(target))]
-                df = df.append(pd.DataFrame(base_info, columns=df.columns), ignore_index=True)
+        loss = criterion(output, target)
+        acc1, acc5 = accuracy(output, target, topk=(1, 5))
+        acc_base_.append(acc1[0].item())
+        ys_pred = torch.argmax(output, dim=1).numpy()
+        if df is not None:
+            base_info = [(idx, vocab_all[target[i]], True, vocab_all[ys_pred[i]], 
+                          image_formatter(imgdata[i,:,:,:]))  for i in range(len(target))]
+            df = df.append(pd.DataFrame(base_info, columns=df.columns), ignore_index=True)
     return np.mean(acc_base_)
 
 def zero_shot_test(net, loader, opt, is_norm=True, use_logit=False, novel_only=True, vis=False, **kwargs):
