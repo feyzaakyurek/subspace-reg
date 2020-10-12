@@ -399,7 +399,7 @@ def main():
         start = time.time()
         opt.split = "test" # TODO: run only for best val.
 
-        novel, base = few_shot_language_incremental_test(model,
+        novel, base = few_shot_finetune_incremental_test(model,
                                                          ckpt,
                                                          criterion,
                                                          meta_testloader,
