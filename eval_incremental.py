@@ -114,6 +114,7 @@ def parse_option():
         parser.add_argument('--freeze_backbone_at', type=int, default=1, help='freeze backbone while updating classifier at the epoch X, epochs start at 1.')
         parser.add_argument('--lmbd_reg_transform_w',  type=float, default=None, help='learning rate')
         parser.add_argument('--target_train_loss',  type=float, default=0.8, help='learning rate')
+        parser.add_argument('--saliency',  action='store_true', help='append label to the beginning description')
 
     if parser.parse_known_args()[0].classifier in ["description-linear"]:
         parser.add_argument('--description_embed_path', type=str, default="description_embeds")
