@@ -105,6 +105,7 @@ def create_and_save_embeds(opt, vocab):
         
     embed_pth = os.path.join(word_embeds, embed_pth)
     if os.path.exists(embed_pth):
+        print("Found {}.".format(embed_pth))
         return
     else:
         print("Loading dictionary...")
