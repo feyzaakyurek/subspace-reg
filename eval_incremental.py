@@ -26,7 +26,7 @@ from dataset.tiered_imagenet import MetaTieredImageNet
 from dataset.cifar import MetaCIFAR100
 from dataset.transform_cfg import transforms_test_options, transforms_list
 
-from eval.meta_eval import meta_test, incremental_test, zero_shot_test, zero_shot_incremental_test, few_shot_language_incremental_test
+from eval.meta_eval import meta_test, incremental_test, zero_shot_test, zero_shot_incremental_test, few_shot_language_incremental_test, few_shot_finetune_incremental_test
 from eval.cls_eval import incremental_validate
 from util import create_and_save_embeds, restricted_float, create_and_save_descriptions
 

@@ -5,10 +5,10 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:volta:1
-#SBATCH --array=1-8
+#SBATCH --array=1-9
 #SBATCH --output=dumped/%A_%a.out
 #SBATCH --error=dumped/%A_%a.err
-#SBATCH --job-name=lil
+#SBATCH --job-name=lil-nolang-finetune
 
 
 
@@ -18,13 +18,11 @@ DUMPED_PATH="/home/gridsan/akyurek/git/rfs-incremental/dumped"
 FILE="$DUMPED_PATH/${SLURM_ARRAY_TASK_ID}_temp_hyperparameters.txt"
 rm $FILE 
 
-for LMBD in 0.1 0.2; do
-    for TRLOSS in 0.5 0.6; do
-        for MULTIPFC in 0.05; do
-            for NOVELEPOCH in 20; do
-                for LR in 0.005 0.002; do 
-                    echo "${LMBD} ${TRLOSS} ${MULTIPFC} ${NOVELEPOCH} ${LR}" >> $FILE
-                done
+for LMBD in 0.1 0.2 0.3; do
+    for TRLOSS in 0.4 0.5 0.6; do
+        for NOVELEPOCH in 20; do
+            for LR in 0.002; do 
+                echo "${LMBD} ${TRLOSS} ${NOVELEPOCH} ${LR}" >> $FILE
             done
         done
     done
@@ -37,9 +35,8 @@ read -ra PARAMS<<< "$LINE"
 
 LMBD="${PARAMS[0]}"
 TRLOSS="${PARAMS[1]}"
-MULTIPFC="${PARAMS[2]}"
-NOVELEPOCH="${PARAMS[3]}"
-LR="${PARAMS[4]}"
+NOVELEPOCH="${PARAMS[2]}"
+LR="${PARAMS[3]}"
 
 # Create log files
 LOG_STDOUT="${DUMPED_PATH}/${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.out"
@@ -48,64 +45,38 @@ LOG_STDERR="${DUMPED_PATH}/${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.err"
 
 
 # LABEL ONLY FEW-SHOT FINETUNING
-BACKBONE_PATH="${DUMPED_PATH}/backbones/label/resnet12_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain_classifier_lang_linear_multip_${MULTIPFC}/resnet12_lastFalse.pth"
+BACKBONE_PATH="${DUMPED_PATH}/backbones/linear/resnet12_miniImageNet_linear_classifier_wbias/resnet12_last.pth"
 
 python eval_incremental.py --model_path $BACKBONE_PATH \
                            --data_root data \
                            --n_shots 5 \
-                           --eval_mode few-shot-language-incremental \
-                           --classifier lang-linear \
+                           --eval_mode few-shot-incremental-fine-tune \
+                           --classifier linear \
                            --novel_epochs $NOVELEPOCH \
                            --learning_rate $LR \
                            --freeze_backbone_at 1 \
                            --lmbd_reg_transform_w $LMBD \
-                           --target_train_loss $TRLOSS \
-                           --multip_fc $MULTIPFC \
-                           --word_embed_size 500 > $LOG_STDOUT 2> $LOG_STDERR
+                           --target_train_loss $TRLOSS > $LOG_STDOUT 2> $LOG_STDERR
                            
 
-# FEW-SHOT FINE TUNING WITHOUT LANGUAGE
-
-
-# TODO
 
 # For debugging.                           
 
-# # Label only
+
+# # No language fine tuning few-shot
 # export DUMPED_PATH="/home/gridsan/akyurek/git/rfs-incremental/dumped"
-# export MULTIPFC="0.05"
-# export BACKBONE_PATH="${DUMPED_PATH}/backbones/label/resnet12_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain_classifier_lang_linear_multip_${MULTIPFC}/resnet12_lastFalse.pth"
+
+# BACKBONE_PATH="${DUMPED_PATH}/backbones/linear/resnet12_miniImageNet_linear_classifier_wbias/resnet12_last.pth"
 # python eval_incremental.py --model_path $BACKBONE_PATH \
 #                            --data_root data \
 #                            --n_shots 5 \
-#                            --eval_mode few-shot-language-incremental \
-#                            --classifier lang-linear \
+#                            --eval_mode few-shot-incremental-fine-tune \
+#                            --classifier linear \
 #                            --novel_epochs 20 \
 #                            --learning_rate 0.002 \
 #                            --freeze_backbone_at 1 \
 #                            --lmbd_reg_transform_w 0.2 \
-#                            --target_train_loss 0.4 \
-#                            --multip_fc $MULTIPFC \
-#                            --word_embed_size 500
-
-# Label+Desc
-# python eval_incremental.py --model_path dumped/ekin_dumped/resnet12_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain_layer_6_multip_0.1/resnet12_last.pth \
-#                            --data_root data \
-#                            --n_shots 5 \
-#                            --eval_mode few-shot-language-incremental \
-#                            --classifier description-linear \
-#                            --novel_epochs 2 \
-#                            --learning_rate 0.001 \
-#                            --freeze_backbone_at 1 \
-#                            --lmbd_reg_transform_w 0.1 \
-#                            --target_train_loss 2.0 \
-#                            --prefix_label \
-#                            --multip_fc 0.1 \
-#                            --transformer_layer 6 \
-#                            --adam
-
-
-
+#                            --target_train_loss 0.4
 
 # Checklist to run an array job.
 # 1. Make sure total number of experiments matches the array param in sbatch.

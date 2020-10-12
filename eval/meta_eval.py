@@ -391,7 +391,7 @@ def fine_tune_novel(epoch, support_xs, support_ys_id, net, criterion, optimizer,
         len_vocab,_ = orig_classifier_weights.size()
         loss += opt.lmbd_reg_transform_w * torch.norm(net.classifier.weight[:len_vocab,:] - orig_classifier_weights)
         if orig_classifier_bias is not None:
-            loss += opt.lmbd_reg_transform_w * torch.norm(net.classifier.bias[:len_vocab,:] - orig_classifier_bias)
+            loss += opt.lmbd_reg_transform_w * torch.norm(net.classifier.bias[:len_vocab] - orig_classifier_bias)
 
     # Train
     optimizer.zero_grad()
@@ -653,7 +653,8 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
 
     acc_novel = []
     acc_base = []
-
+    running_avg = []
+    
     basenet = copy.deepcopy(net).cuda()
 
     base_weight = basenet.classifier.weight.clone().detach().requires_grad_(False)
@@ -688,7 +689,6 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
 
         novel_weight = dummy_classifier.weight.detach().cuda()
         classifier.weight = nn.Parameter(torch.cat([base_weight, novel_weight], 0))
-
         if basenet.classifier.bias is not None:
             novel_bias = dummy_classifier.bias.detach().cuda()
             classifier.bias = nn.Parameter(torch.cat([base_bias, novel_bias]))
@@ -712,7 +712,7 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
         train_loss = 15
         epoch = 1
         while train_loss > opt.target_train_loss or epoch < opt.novel_epochs + 1:
-            freeze_backbone_weights(net, opt, epoch, exclude="classifier")
+            freeze_backbone_weights(net, opt, epoch, exclude=["classifier"])
             train_acc, train_loss = fine_tune_novel(epoch,
                                                     support_xs,
                                                     support_ys_id,
@@ -732,7 +732,7 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
                                image_formatter(novelimgs[i,:,:,:]))  for i in range(len(query_ys_id))]
                 df = df.append(pd.DataFrame(novel_info, columns=df.columns), ignore_index=True)
             epoch += 1
-        acc_novel.append(test_acc.item())
+        
 
         try:
             base_batch = next(base_valloader_it)
@@ -746,14 +746,16 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
         else:
             acc_base_ = eval_base(net, base_batch, criterion, vocab_all)
 
-
-        acc_base.append(acc_base_)
-
         avg_score = (acc_base_ + test_acc.item())/2
-
+        
+        acc_base.append(acc_base_)
+        acc_novel.append(test_acc.item())
+        running_avg.append(avg_score)
+    
         print('\n{:25} {:}\n'
               '{:25} {:}\n'
               '{:25} {:}\n'
+              '{:25} {:.4f}\n'
               '{:25} {:.4f}\n'
               '{:25} {:.4f}\n'
               '{:25} {:.4f}'.format(
@@ -768,7 +770,9 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
                   "Base incremental acc:",
                   acc_base_,
                   "Average:",
-                  avg_score))
+                  avg_score,
+                  "Running Average:",
+                  np.mean(running_avg)))
 
     if vis:
         return df
