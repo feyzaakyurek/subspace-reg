@@ -68,7 +68,7 @@ def parse_option():
     parser.add_argument('--test_base_batch_size', type=int, default=50, metavar='test_batch_size',
                         help='Size of test batch)')
     parser.add_argument('--eval_mode', type=str,
-                        choices=['few-shot', 'few-shot-incremental', 'zero-shot',
+                        choices=['few-shot', 'few-shot-incremental', 'zero-shot', 'few-shot-incremental-fine-tune',
                                  'zero-shot-incremental', 'few-shot-language-incremental'])
 
     parser.add_argument('--classifier', type=str,
@@ -82,10 +82,11 @@ def parse_option():
                             help="Alpha is the fraction to multiply base scores with. End is the beginning of the range to try.")
         parser.add_argument("--inc_alpha", type=restricted_float, default="0.01",
                             help="Alpha is the fraction to multiply base scores with. Inc is increment.")
-        
+
     if parser.parse_known_args()[0].eval_mode in ["zero-shot-incremental",
                                                   "few-shot-incremental",
-                                                  "few-shot-language-incremental"]:
+                                                  "few-shot-language-incremental",
+                                                  'few-shot-incremental-fine-tune']:
         parser.add_argument("--neval_episodes", type=int, default=2000,
                             help="Number of evaluation episodes both for base and novel.")
 
@@ -105,7 +106,7 @@ def parse_option():
         parser.add_argument('--num_novel_combs', type=int, default=0.05,
                             help='Number of combinations of novel/test classes to evaluate base samples against:)')
 
-    if parser.parse_known_args()[0].eval_mode == "few-shot-language-incremental":
+    if parser.parse_known_args()[0].eval_mode in ["few-shot-language-incremental", 'few-shot-incremental-fine-tune']:
         parser.add_argument('--novel_epochs', type=int, default=15, help='number of epochs for novel support set.')
         parser.add_argument('--learning_rate', type=float, default=0.01, help='learning rate')
         parser.add_argument('--weight_decay', type=float, default=5e-4, help='weight decay')
@@ -141,12 +142,12 @@ def parse_option():
 def main():
 
     opt = parse_option()
-    
+
     # Add git commit hash
     process = subprocess.Popen(['git', 'rev-parse', '--short', 'HEAD'], shell=False, stdout=subprocess.PIPE)
     git_head_hash = process.communicate()[0].strip()
     opt.git_head_hash = git_head_hash.decode()
-    
+
     print("************* Training arguments *************")
 #     run.config.update(opt)
     args = opt
@@ -376,6 +377,39 @@ def main():
 #            'test_acc_novel_avg': novel[0],
 #            'test_acc_base_avg': base[0],
 #            'test_acc_avg_both': avg_score})
+
+    elif opt.eval_mode == 'few-shot-incremental-fine-tune':
+        assert opt.classifier == "linear"
+        criterion = nn.CrossEntropyLoss()
+        start = time.time()
+        opt.split = "val"
+        novel, base = few_shot_finetune_incremental_test(model,
+                                                         ckpt,
+                                                         criterion,
+                                                         meta_valloader,
+                                                         base_val_loader,
+                                                         opt)
+        val_time = time.time() - start
+        avg_score = (base[0]+novel[0])/2
+        print('val_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel[0], novel[1], val_time))
+        print('val_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base[0], base[1], val_time))
+        print('val_acc_average: {:.4f}'.format(avg_score))
+
+        start = time.time()
+        opt.split = "test" # TODO: run only for best val.
+
+        novel, base = few_shot_language_incremental_test(model,
+                                                         ckpt,
+                                                         criterion,
+                                                         meta_testloader,
+                                                         base_test_loader,
+                                                         opt)
+        test_time = time.time() - start
+        avg_score = (base[0]+novel[0])/2
+        print('test_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel[0], novel[1], test_time))
+        print('test_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base[0], base[1], test_time))
+        print('test_acc_average: {:.4f}'.format(avg_score))
+
     elif opt.eval_mode == "few-shot":
         start = time.time()
         val_acc, val_std = meta_test(model, meta_valloader)

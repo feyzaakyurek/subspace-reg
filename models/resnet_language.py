@@ -148,10 +148,10 @@ class BasicBlock(nn.Module):
                 out = F.dropout(out, p=self.drop_rate, training=self.training, inplace=True)
 
         return out
-    
-    
+
+
 class LangLinearClassifier(nn.Module):
-    def __init__(self, vocab,  load_embeds, dim, description=False, 
+    def __init__(self, vocab,  load_embeds, dim, description=False,
                  cdim=640, bias=False, verbose=True, multip_fc=0.15):
         super(LangLinearClassifier, self).__init__()
         self.vocab = vocab
@@ -169,13 +169,13 @@ class LangLinearClassifier(nn.Module):
 
         # Load the embed dict pickle
         if verbose:
-            print(f"Reading embeddings from {load_embeds}...")    
-        with open(load_embeds, 'rb') as f: 
+            print(f"Reading embeddings from {load_embeds}...")
+        with open(load_embeds, 'rb') as f:
             pretrained_embedding = pickle.load(f)
 
         for w in words:
             if w not in pretrained_embedding: print("not found: "+ w)
-        
+
         if description:
             embeds = []
             for token in vocab:
@@ -193,7 +193,7 @@ class LangLinearClassifier(nn.Module):
                     except KeyError:
                         continue
                 embed_tensor[i] /= len(words)
-        
+
         self.embed = nn.Parameter(embed_tensor * multip_fc, requires_grad=False)
 
         self.transform_W = nn.Parameter(torch.Tensor(dim,cdim), requires_grad=True)
@@ -208,12 +208,13 @@ class LangLinearClassifier(nn.Module):
         else:
             self.register_parameter('bias', None)
 
+    @property
     def weight(self):
-        return self.embed @ self.transform_W 
+        return self.embed @ self.transform_W
 
     def forward(self, input):
-        return F.linear(input, self.weight(), self.bias)
-    
+        return F.linear(input, self.weight, self.bias)
+
 
 class ResNet(nn.Module):
 
@@ -221,7 +222,7 @@ class ResNet(nn.Module):
                  dropblock_size=5, num_classes=-1, use_se=False, vocab=None, opt=None):
         if vocab is not None:
             assert opt is not None
-            
+
         super(ResNet, self).__init__()
 
         self.inplanes = 3
@@ -256,25 +257,25 @@ class ResNet(nn.Module):
                 self.classifier = nn.Linear(640, self.num_classes)
             else:
                 if opt.classifier == "lang-linear":
-                    embed_pth = os.path.join(opt.word_embed_path, 
-                                             "{0}_dim{1}.pickle".format(opt.dataset, 
+                    embed_pth = os.path.join(opt.word_embed_path,
+                                             "{0}_dim{1}.pickle".format(opt.dataset,
                                                                         opt.word_embed_size))
-                    self.classifier = LangLinearClassifier(vocab, 
-                                                           embed_pth, 
-                                                           cdim=640, 
-                                                           dim=opt.word_embed_size, 
+                    self.classifier = LangLinearClassifier(vocab,
+                                                           embed_pth,
+                                                           cdim=640,
+                                                           dim=opt.word_embed_size,
                                                            bias=opt.lang_classifier_bias,
                                                            multip_fc=opt.multip_fc)
                 else:
-                    embed_pth = os.path.join(opt.description_embed_path, 
+                    embed_pth = os.path.join(opt.description_embed_path,
                              "{0}_{1}_layer{2}_prefix_{3}.pickle".format(opt.dataset,
                                                              opt.desc_embed_model,
                                                              opt.transformer_layer,
                                                              opt.prefix_label))
-                    self.classifier = LangLinearClassifier(vocab, 
-                                                           embed_pth, 
+                    self.classifier = LangLinearClassifier(vocab,
+                                                           embed_pth,
                                                            cdim=640,
-                                                           dim=None, 
+                                                           dim=None,
                                                            bias=opt.lang_classifier_bias,
                                                            description=True,
                                                            multip_fc=opt.multip_fc)
@@ -305,7 +306,7 @@ class ResNet(nn.Module):
             layers.append(layer)
 
         return nn.Sequential(*layers)
-    
+
 
     def forward(self, x, is_feat=False):
         x = self.layer1(x)
