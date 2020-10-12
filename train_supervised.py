@@ -9,6 +9,7 @@ import argparse
 import socket
 import time
 import sys
+import subprocess
 
 
 import warnings
@@ -137,8 +138,11 @@ def parse_option():
     for it in iterations:
         opt.lr_decay_epochs.append(int(it))
 
-    opt.model_name = '{}_{}_lr_{}_decay_{}_trans_{}'.format(opt.model, opt.dataset, opt.learning_rate,
-                                                            opt.weight_decay, opt.transform)
+    opt.model_name = '{}_{}_lr_{}_decay_{}_trans_{}'.format(opt.model, 
+                                                            opt.dataset, 
+                                                            opt.learning_rate,
+                                                            opt.weight_decay, 
+                                                            opt.transform)
 
     if opt.cosine:
         opt.model_name = '{}_cosine'.format(opt.model_name)
@@ -146,7 +150,25 @@ def parse_option():
     if opt.adam:
         opt.model_name = '{}_useAdam'.format(opt.model_name)
 
-    opt.model_name = '{}_trial_{}_layer_{}_multip_{}'.format(opt.model_name, opt.trial, opt.transformer_layer, opt.multip_fc)
+    if opt.classifier == "description-linear":
+        opt.model_name = '{}_trial_{}_classifier_{}_layer_{}_multip_{}_prefix_{}_{}'.format(opt.model_name, 
+                                                                                         opt.trial, 
+                                                                                         opt.classifier,
+                                                                                         opt.transformer_layer, 
+                                                                                         opt.multip_fc,
+                                                                                         opt.prefix_label,
+                                                                                         os.environ['SLURM_JOB_ID'])
+    elif opt.classifier == "lang-linear":
+        opt.model_name = '{}_trial_{}_classifier_{}_multip_{}_{}'.format(opt.model_name, 
+                                                                       opt.trial, 
+                                                                       opt.classifier,
+                                                                       opt.multip_fc, 
+                                                                       os.environ['SLURM_JOB_ID'])
+    else:
+        opt.model_name = '{}_trial_{}_classifier_{}_{}'.format(opt.model_name, 
+                                                             opt.trial,
+                                                             opt.classifier,
+                                                             os.environ['SLURM_JOB_ID'])
 
     opt.tb_folder = os.path.join(opt.tb_path, opt.model_name)
     if not os.path.isdir(opt.tb_folder):
@@ -158,12 +180,26 @@ def parse_option():
 
     opt.n_gpu = torch.cuda.device_count()
     print("Device count: ", opt.n_gpu)
+    
+    # Print opt
+    
+    # Add git commit hash
+    process = subprocess.Popen(['git', 'rev-parse', '--short', 'HEAD'], shell=False, stdout=subprocess.PIPE)
+    git_head_hash = process.communicate()[0].strip()
+    opt.git_head_hash = git_head_hash.decode()
+    
+    print("************* Training arguments *************")
+    for arg in vars(opt):
+        print(arg, getattr(opt, arg))
+    print("End of arguments.\n")
+    
     return opt
 
 
 def main():
 
     opt = parse_option()
+    # todo print opt
 
     # dataloader
     train_partition = 'trainval' if opt.use_trainval else 'train'
