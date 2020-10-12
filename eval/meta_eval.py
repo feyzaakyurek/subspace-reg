@@ -222,7 +222,7 @@ def few_shot_language_incremental_test(net, ckpt, criterion, meta_valloader, bas
         except StopIteration:
             meta_valloader_it = iter(meta_valloader)
             data = next(meta_valloader_it)
-#         ipdb.set_trace()    
+#         ipdb.set_trace()
         support_xs, support_ys, query_xs, query_ys = drop_a_dim(data)
         novelimgs = query_xs.detach().numpy()
 
@@ -291,7 +291,7 @@ def few_shot_language_incremental_test(net, ckpt, criterion, meta_valloader, bas
         # routine: fine-tuning for novel classes
         train_loss = 15
         epoch = 1
-        
+
         # optimizer
         if opt.adam:
             optimizer = torch.optim.Adam(net.parameters(),
@@ -302,8 +302,8 @@ def few_shot_language_incremental_test(net, ckpt, criterion, meta_valloader, bas
                                   lr=opt.learning_rate,
                                   momentum=opt.momentum,
                                   weight_decay=opt.weight_decay) # TODO anything to load from ckpt?
-            
-        
+
+
         while train_loss > opt.target_train_loss or epoch < opt.novel_epochs + 1:
             freeze_backbone_weights(net, opt, epoch)
             train_acc, train_loss = fine_tune_novel(epoch,
@@ -320,12 +320,11 @@ def few_shot_language_incremental_test(net, ckpt, criterion, meta_valloader, bas
                                                                                    criterion,
                                                                                    opt)
             if vis and idx == 0:
-                novel_info = [(idx, vocab_all[query_ys_id[i]], False, vocab_all[query_ys_pred[i]],  
+                novel_info = [(idx, vocab_all[query_ys_id[i]], False, vocab_all[query_ys_pred[i]],
                                image_formatter(novelimgs[i,:,:,:]))  for i in range(len(query_ys_id))]
                 df = df.append(pd.DataFrame(novel_info, columns=df.columns), ignore_index=True)
             epoch += 1
-        
-        
+
         try:
             base_batch = next(base_valloader_it)
         except StopIteration:
@@ -376,7 +375,7 @@ def few_shot_language_incremental_test(net, ckpt, criterion, meta_valloader, bas
 
 
 
-def fine_tune_novel(epoch, support_xs, support_ys_id, net, criterion, optimizer, orig_classifier_weights, opt):
+def fine_tune_novel(epoch, support_xs, support_ys_id, net, criterion, optimizer, orig_classifier_weights, opt, orig_classifier_bias=None):
     """One epoch training, single batch training."""
 #     ipdb.set_trace()
     support_xs = support_xs.float().cuda()
@@ -390,7 +389,9 @@ def fine_tune_novel(epoch, support_xs, support_ys_id, net, criterion, optimizer,
 
     if opt.lmbd_reg_transform_w is not None:
         len_vocab,_ = orig_classifier_weights.size()
-        loss = loss + opt.lmbd_reg_transform_w * torch.norm(net.classifier.weight()[:len_vocab,:] - orig_classifier_weights)
+        loss += opt.lmbd_reg_transform_w * torch.norm(net.classifier.weight[:len_vocab,:] - orig_classifier_weights)
+        if orig_classifier_bias is not None:
+            loss += opt.lmbd_reg_transform_w * torch.norm(net.classifier.bias[:len_vocab,:] - orig_classifier_bias)
 
     # Train
     optimizer.zero_grad()
@@ -445,7 +446,7 @@ def eval_base(net, base_batch, criterion, vocab_all, df=None):
         acc_base_.append(acc1[0].item())
         ys_pred = torch.argmax(output, dim=1).numpy()
         if df is not None:
-            base_info = [(idx, vocab_all[target[i]], True, vocab_all[ys_pred[i]], 
+            base_info = [(idx, vocab_all[target[i]], True, vocab_all[ys_pred[i]],
                           image_formatter(imgdata[i,:,:,:]))  for i in range(len(target))]
             df = df.append(pd.DataFrame(base_info, columns=df.columns), ignore_index=True)
     return np.mean(acc_base_)
@@ -643,3 +644,133 @@ def meta_test(net, testloader, use_logit=True, is_norm=True, classifier='LR'):
             acc.append(metrics.accuracy_score(query_ys, query_ys_pred))
 
     return mean_confidence_interval(acc)
+
+
+
+def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, base_val_loader, opt,  vis=False):
+    if vis:
+        df = pd.DataFrame(columns=['idx', 'class', 'isbase', 'predicted', 'img'])
+
+    acc_novel = []
+    acc_base = []
+
+    basenet = copy.deepcopy(net).cuda()
+
+    base_weight = basenet.classifier.weight.clone().detach().requires_grad_(False)
+    base_bias   = basenet.classifier.bias.clone().detach().requires_grad_(False)
+
+    base_valloader_it = iter(base_val_loader)
+    meta_valloader_it = iter(meta_valloader)
+#     for idx, data in enumerate(meta_valloader):
+    for idx in range(opt.neval_episodes):
+        print("\n**** Iteration {}/{} ****\n".format(idx, opt.neval_episodes))
+        try:
+            data = next(meta_valloader_it)
+        except StopIteration:
+            meta_valloader_it = iter(meta_valloader)
+            data = next(meta_valloader_it)
+#         ipdb.set_trace()
+        support_xs, support_ys, query_xs, query_ys = drop_a_dim(data)
+        novelimgs = query_xs.detach().numpy()
+
+        # Get sorted numeric labels, create a mapping that maps the order to actual label
+
+        vocab_base, vocab_all, vocab_novel, orig2id = get_vocabs(base_val_loader, meta_valloader, support_ys)
+        novel_ids = np.sort(np.unique(query_ys))
+        query_ys_id = torch.LongTensor([orig2id[y] for y in query_ys])
+        support_ys_id = torch.LongTensor([orig2id[y] for y in support_ys])
+
+        net = copy.deepcopy(basenet)
+        net.train()
+        classifier = net.classifier
+
+        dummy_classifier = nn.Linear(640, len(novel_ids), bias=(basenet.classifier.bias is not None)) # TODO!!
+
+        novel_weight = dummy_classifier.weight.detach().cuda()
+        classifier.weight = nn.Parameter(torch.cat([base_weight, novel_weight], 0))
+
+        if basenet.classifier.bias is not None:
+            novel_bias = dummy_classifier.bias.detach().cuda()
+            classifier.bias = nn.Parameter(torch.cat([base_bias, novel_bias]))
+
+        # Validate before training.
+        test_acc, test_acc_top5, test_loss, _ = validate_fine_tune(query_xs, query_ys_id, net, criterion, opt)
+        print('{:25} {:.4f}\n'.format("Novel incremental acc before fine-tune:",test_acc.item()))
+
+        # optimizer
+        if opt.adam:
+            optimizer = torch.optim.Adam(net.parameters(),
+                                         lr=opt.learning_rate,
+                                         weight_decay=0.0005)
+        else:
+            optimizer = torch.optim.SGD(net.parameters(),
+                                  lr=opt.learning_rate,
+                                  momentum=opt.momentum,
+                                  weight_decay=opt.weight_decay) # TODO anything to load from ckpt?
+
+        # routine: fine-tuning for novel classes
+        train_loss = 15
+        epoch = 1
+        while train_loss > opt.target_train_loss or epoch < opt.novel_epochs + 1:
+            freeze_backbone_weights(net, opt, epoch, exclude="classifier")
+            train_acc, train_loss = fine_tune_novel(epoch,
+                                                    support_xs,
+                                                    support_ys_id,
+                                                    net,
+                                                    criterion,
+                                                    optimizer,
+                                                    base_weight,
+                                                    opt,
+                                                    base_bias)
+            test_acc, test_acc_top5, test_loss, query_ys_pred = validate_fine_tune(query_xs,
+                                                                                   query_ys_id,
+                                                                                   net,
+                                                                                   criterion,
+                                                                                   opt)
+            if vis and idx == 0:
+                novel_info = [(idx, vocab_all[query_ys_id[i]], False, vocab_all[query_ys_pred[i]],
+                               image_formatter(novelimgs[i,:,:,:]))  for i in range(len(query_ys_id))]
+                df = df.append(pd.DataFrame(novel_info, columns=df.columns), ignore_index=True)
+            epoch += 1
+        acc_novel.append(test_acc.item())
+
+        try:
+            base_batch = next(base_valloader_it)
+        except StopIteration:
+            base_valloader_it = iter(base_val_loader)
+            base_batch = next(base_valloader_it)
+
+        # Evaluate base samples with the updated network
+        if vis and idx == 0:
+            acc_base_ = eval_base(net, base_batch, criterion, vocab_all, df=df)
+        else:
+            acc_base_ = eval_base(net, base_batch, criterion, vocab_all)
+
+
+        acc_base.append(acc_base_)
+
+        avg_score = (acc_base_ + test_acc.item())/2
+
+        print('\n{:25} {:}\n'
+              '{:25} {:}\n'
+              '{:25} {:}\n'
+              '{:25} {:.4f}\n'
+              '{:25} {:.4f}\n'
+              '{:25} {:.4f}'.format(
+                  "Novel classes are:",
+                  novel_ids,
+                  "Human labels are:",
+                  vocab_novel,
+                  "Novel training epochs:",
+                  epoch-1,
+                  "Novel incremental acc:",
+                  test_acc.item(),
+                  "Base incremental acc:",
+                  acc_base_,
+                  "Average:",
+                  avg_score))
+
+    if vis:
+        return df
+    else:
+        return mean_confidence_interval(acc_novel), mean_confidence_interval(acc_base)
