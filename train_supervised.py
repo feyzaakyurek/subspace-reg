@@ -54,6 +54,7 @@ def parse_option():
     parser.add_argument('--batch_size', type=int, default=64, help='batch_size')
     parser.add_argument('--num_workers', type=int, default=8, help='num of workers to use')
     parser.add_argument('--epochs', type=int, default=100, help='number of training epochs')
+    
 
     # optimization
     parser.add_argument('--learning_rate', type=float, default=0.05, help='learning rate')
@@ -97,6 +98,9 @@ def parse_option():
     parser.add_argument('--classifier', type=str, 
                         choices=['linear', 'lang-linear', 'description-linear'])
     parser.add_argument('-t', '--trial', type=str, default='1', help='the experiment id')
+    
+    if parser.parse_known_args()[0].classifier in ["linear"]:
+        parser.add_argument('--no_linear_bias', action='store_false', help='Use of bias in linear classifier.')
     
     if parser.parse_known_args()[0].classifier in ["lang-linear"]:
         parser.add_argument('--word_embed_size', type=int, default=None, help='Word embedding classifier')
@@ -199,7 +203,6 @@ def parse_option():
 def main():
 
     opt = parse_option()
-    # todo print opt
 
     # dataloader
     train_partition = 'trainval' if opt.use_trainval else 'train'
