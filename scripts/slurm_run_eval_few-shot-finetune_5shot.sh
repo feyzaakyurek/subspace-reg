@@ -5,10 +5,10 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:volta:1
-#SBATCH --array=1-9
+#SBATCH --array=1-6
 #SBATCH --output=dumped/%A_%a.out
 #SBATCH --error=dumped/%A_%a.err
-#SBATCH --job-name=nolang-5shot-fine
+#SBATCH --job-name=nolangnobias-5shot-fine
 
 
 
@@ -19,7 +19,7 @@ FILE="$DUMPED_PATH/${SLURM_ARRAY_TASK_ID}_temp_hyperparameters.txt"
 rm $FILE 
 
 for LMBD in 0.1 0.2 0.3; do
-    for TRLOSS in 0.4 0.5 0.6; do
+    for TRLOSS in 0.5 0.6; do
         for NOVELEPOCH in 20; do
             for LR in 0.002; do 
                 echo "${LMBD} ${TRLOSS} ${NOVELEPOCH} ${LR}" >> $FILE
@@ -45,7 +45,7 @@ LOG_STDERR="${DUMPED_PATH}/${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.err"
 
 
 # LABEL ONLY FEW-SHOT FINETUNING
-BACKBONE_PATH="${DUMPED_PATH}/backbones/linear/resnet12_miniImageNet_linear_classifier_wbias/resnet12_last.pth"
+BACKBONE_PATH="${DUMPED_PATH}/backbones/linear/resnet12_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain_classifier_linear_8075566/resnet12_last.pth"
 
 python eval_incremental.py --model_path $BACKBONE_PATH \
                            --data_root data \
@@ -65,7 +65,8 @@ python eval_incremental.py --model_path $BACKBONE_PATH \
 
 # # No language fine tuning few-shot
 # export DUMPED_PATH="/home/gridsan/akyurek/git/rfs-incremental/dumped"
-
+# export LOG_STDOUT="${DUMPED_PATH}/8071815_9.out"
+# export LOG_STDERR="${DUMPED_PATH}/8071815_9.err"
 # BACKBONE_PATH="${DUMPED_PATH}/backbones/linear/resnet12_miniImageNet_linear_classifier_wbias/resnet12_last.pth"
 # python eval_incremental.py --model_path $BACKBONE_PATH \
 #                            --data_root data \
@@ -75,8 +76,8 @@ python eval_incremental.py --model_path $BACKBONE_PATH \
 #                            --novel_epochs 20 \
 #                            --learning_rate 0.002 \
 #                            --freeze_backbone_at 1 \
-#                            --lmbd_reg_transform_w 0.2 \
-#                            --target_train_loss 0.4
+#                            --lmbd_reg_transform_w 0.3 \
+#                            --target_train_loss 0.6 >> $LOG_STDOUT 2>> $LOG_STDERR
 
 # Checklist to run an array job.
 # 1. Make sure total number of experiments matches the array param in sbatch.
