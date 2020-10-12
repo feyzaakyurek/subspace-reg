@@ -190,25 +190,30 @@ def drop_a_dim(data): #TODO why do we need this in the first place?
     query_ys = query_ys.view(-1).detach().numpy()
     return (support_xs, support_ys, query_xs, query_ys)
 
-def few_shot_language_incremental_test(net, ckpt, criterion, meta_valloader, base_val_loader, opt,  vis=False):
+def few_shot_language_incremental_test(net, ckpt, criterion, meta_valloader, base_val_loader, opt, vis=False):
     if vis:
         df = pd.DataFrame(columns=['idx', 'class', 'isbase', 'predicted', 'img'])
 
     acc_novel = []
     acc_base = []
+    running_avg = []
     basenet = copy.deepcopy(net).cuda()
-
+    print("Copied to basenet.")
     if basenet.classifier.multip_fc == 0: # TODO
         print("A LARGE WARNING!!! Loaded multipfc is 0, setting it to {}!!!".format(opt.multip_fc))
         basenet.classifier.multip_fc = nn.Parameter(torch.FloatTensor([opt.multip_fc]), requires_grad=False)
-#     ipdb.set_trace()
 
     embed = basenet.classifier.embed.clone().detach().requires_grad_(False)
     trns  = basenet.classifier.transform_W.clone().detach().requires_grad_(False)
     orig_classifier_weights = embed @ trns if opt.lmbd_reg_transform_w else None
-
+    print("Retrieved original classifier weights.")
+    print(net)
     base_valloader_it = iter(base_val_loader)
     meta_valloader_it = iter(meta_valloader)
+    print("Created iterators.")
+    print("len(base_valloader_it) ", len(base_valloader_it))
+    print("len(meta_valloader_it) ", len(meta_valloader_it))
+    print("opt.neval_episodes ", opt.neval_episodes)
 #     for idx, data in enumerate(meta_valloader):
     for idx in range(opt.neval_episodes):
         print("\n**** Iteration {}/{} ****\n".format(idx, opt.neval_episodes))
@@ -319,7 +324,7 @@ def few_shot_language_incremental_test(net, ckpt, criterion, meta_valloader, bas
                                image_formatter(novelimgs[i,:,:,:]))  for i in range(len(query_ys_id))]
                 df = df.append(pd.DataFrame(novel_info, columns=df.columns), ignore_index=True)
             epoch += 1
-        acc_novel.append(test_acc.item())
+        
         
         try:
             base_batch = next(base_valloader_it)
@@ -333,14 +338,18 @@ def few_shot_language_incremental_test(net, ckpt, criterion, meta_valloader, bas
         else:
             acc_base_ = eval_base(net, base_batch, criterion, vocab_all)
 
-
-        acc_base.append(acc_base_)
-
+        # Compute avg of base and novel.
         avg_score = (acc_base_ + test_acc.item())/2
+        
+        # Update trackers.
+        acc_base.append(acc_base_)
+        acc_novel.append(test_acc.item())
+        running_avg.append(avg_score)
 
         print('\n{:25} {:}\n'
               '{:25} {:}\n'
               '{:25} {:}\n'
+              '{:25} {:.4f}\n'
               '{:25} {:.4f}\n'
               '{:25} {:.4f}\n'
               '{:25} {:.4f}'.format(
@@ -355,7 +364,9 @@ def few_shot_language_incremental_test(net, ckpt, criterion, meta_valloader, bas
                   "Base incremental acc:",
                   acc_base_,
                   "Average:",
-                  avg_score))
+                  avg_score,
+                  "Running Average:",
+                  np.mean(running_avg)))
 
     if vis:
         return df
@@ -512,8 +523,7 @@ def zero_shot_test(net, loader, opt, is_norm=True, use_logit=False, novel_only=T
         else:
             return mean_confidence_interval(acc_novel)
 
-
-
+        
 
 def incremental_test(net, testloader, val_loader, alpha, use_logit=False, is_norm=True, classifier='LR', vis=False):
     acc_novel = []
