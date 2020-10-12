@@ -676,7 +676,7 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
 
         # Get sorted numeric labels, create a mapping that maps the order to actual label
 
-        vocab_base, vocab_all, vocab_novel, orig2id = get_vocabs(base_val_loader, meta_valloader, support_ys)
+        vocab_base, vocab_all, vocab_novel, orig2id = get_vocabs(base_val_loader, meta_valloader, query_ys)
         novel_ids = np.sort(np.unique(query_ys))
         query_ys_id = torch.LongTensor([orig2id[y] for y in query_ys])
         support_ys_id = torch.LongTensor([orig2id[y] for y in support_ys])

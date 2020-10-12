@@ -8,12 +8,12 @@
 #SBATCH --array=1-9
 #SBATCH --output=dumped/%A_%a.out
 #SBATCH --error=dumped/%A_%a.err
-#SBATCH --job-name=lil-nolang-finetune
+#SBATCH --job-name=nolang-5shot-fine
 
 
 
 # Create the combinations of params for each array task,
-# and save them to a temp params file.
+# and save them to a temp params file.sc
 DUMPED_PATH="/home/gridsan/akyurek/git/rfs-incremental/dumped"
 FILE="$DUMPED_PATH/${SLURM_ARRAY_TASK_ID}_temp_hyperparameters.txt"
 rm $FILE 
