@@ -42,7 +42,7 @@ export LOG_STDERR="${DUMPED_PATH}/${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.e
 #                            --multip_fc $MULTIPFC \
 #                            --classifier lang-linear \
 #                            --word_embed_size 500 > $LOG_STDOUT 2> $LOG_STDERR
-export DUMPED_PATH="/afs/csail.mit.edu/u/a/akyurek/akyurek/feyza/git/rfs-incremental/dumped/backbones/c-x-sum"
+export DUMPED_PATH="/afs/csail.mit.edu/u/a/akyurek/akyurek/feyza/git/rfs-incremental/dumped/backbones/c-x-concat"
 export DATA_PATH="/afs/csail.mit.edu/u/a/akyurek/akyurek/git/rfs-incremental/data"
 export WORD_EMBEDS="/afs/csail.mit.edu/u/a/akyurek/akyurek/feyza/git/rfs-incremental/word_embeds"
 CUDA_VISIBLE_DEVICES=14 python train_supervised.py --trial pretrain \
