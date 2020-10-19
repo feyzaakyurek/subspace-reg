@@ -6,6 +6,7 @@ import math
 import numpy as np
 import os
 import pickle
+import ipdb
 
 
 def conv3x3(in_planes, out_planes, stride=1):
@@ -149,13 +150,15 @@ class BasicBlock(nn.Module):
 
         return out
 
-
+        
 class LangLinearClassifier(nn.Module):
     def __init__(self, vocab,  load_embeds, dim, description=False,
-                 cdim=640, bias=False, verbose=True, multip_fc=0.15):
+                 cdim=640, bias=False, verbose=True, multip_fc=0.15,
+                 attention=False):
         super(LangLinearClassifier, self).__init__()
         self.vocab = vocab
         self.dim = dim
+        self.attention = attention
         self.multip_fc = nn.Parameter(torch.FloatTensor([multip_fc]), requires_grad=False)
         bound = 1 / math.sqrt(cdim)
         assert os.path.exists(load_embeds)
@@ -195,13 +198,26 @@ class LangLinearClassifier(nn.Module):
                 embed_tensor[i] /= len(words)
 
         self.embed = nn.Parameter(embed_tensor * multip_fc, requires_grad=False)
+        
+        if self.attention:
+            num_classes = embed_tensor.size()[0]
+            self.softmax = nn.Softmax(dim=1)
+            self.transform_W_key = nn.Parameter(torch.Tensor(dim,cdim), requires_grad=True)
+            self.transform_W_value = nn.Parameter(torch.Tensor(dim,cdim), requires_grad=True)
+            self.transform_W_output = nn.Parameter(torch.Tensor(num_classes,2*cdim), requires_grad=True)
+            
+            nn.init.kaiming_uniform_(self.transform_W_key, a=math.sqrt(5))
+            nn.init.kaiming_uniform_(self.transform_W_value, a=math.sqrt(5))
+            nn.init.kaiming_uniform_(self.transform_W_output, a=math.sqrt(5))
+            
+        else:
 
-        self.transform_W = nn.Parameter(torch.Tensor(dim,cdim), requires_grad=True)
-        nn.init.kaiming_uniform_(self.transform_W, a=math.sqrt(5))
+            self.transform_W = nn.Parameter(torch.Tensor(dim,cdim), requires_grad=True)
+            nn.init.kaiming_uniform_(self.transform_W, a=math.sqrt(5))
 
-        self.transform_B = nn.Parameter(torch.Tensor(len(vocab),cdim), requires_grad=True)
-        nn.init.kaiming_uniform_(self.transform_B, a=math.sqrt(5))
-
+            self.transform_B = nn.Parameter(torch.Tensor(len(vocab),cdim), requires_grad=True)
+            nn.init.kaiming_uniform_(self.transform_B, a=math.sqrt(5))
+        
         if bias:
             self.bias = nn.Parameter(torch.Tensor(len(vocab)), requires_grad=True)
             nn.init.uniform_(self.bias, -bound, bound)
@@ -210,9 +226,16 @@ class LangLinearClassifier(nn.Module):
 
     @property
     def weight(self):
-        return self.embed @ self.transform_W
+        if self.attention:
+            return self.transform_W_output #TODO
+        else:
+            return self.embed @ self.transform_W
 
     def forward(self, input):
+        if self.attention:
+            x = input @ torch.transpose((self.embed @ self.transform_W_key),0,1) # Bxnum_classes key values
+            x = self.softmax(x) @ (self.embed @ self.transform_W_value)  # Bx640 context vector
+            input = torch.cat((input,x),1)
         return F.linear(input, self.weight, self.bias)
 
 
@@ -265,7 +288,8 @@ class ResNet(nn.Module):
                                                            cdim=640,
                                                            dim=opt.word_embed_size,
                                                            bias=opt.lang_classifier_bias,
-                                                           multip_fc=opt.multip_fc)
+                                                           multip_fc=opt.multip_fc,
+                                                           attention=opt.attention)
                 else:
                     embed_pth = os.path.join(opt.description_embed_path,
                              "{0}_{1}_layer{2}_prefix_{3}.pickle".format(opt.dataset,
@@ -278,7 +302,8 @@ class ResNet(nn.Module):
                                                            dim=None,
                                                            bias=opt.lang_classifier_bias,
                                                            description=True,
-                                                           multip_fc=opt.multip_fc)
+                                                           multip_fc=opt.multip_fc,
+                                                           attention=opt.attention)
 
     def _make_layer(self, block, n_block, planes, stride=1, drop_rate=0.0, drop_block=False, block_size=1):
         downsample = None

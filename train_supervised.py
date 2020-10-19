@@ -10,6 +10,7 @@ import socket
 import time
 import sys
 import subprocess
+import numpy as np
 
 
 import warnings
@@ -51,7 +52,7 @@ def parse_option():
     parser.add_argument('--print_freq', type=int, default=100, help='print frequency')
     parser.add_argument('--tb_freq', type=int, default=500, help='tb frequency')
     parser.add_argument('--save_freq', type=int, default=10, help='save frequency')
-    parser.add_argument('--batch_size', type=int, default=64, help='batch_size')
+    parser.add_argument('--batch_size', type=int, default=60, help='batch_size')
     parser.add_argument('--num_workers', type=int, default=8, help='num of workers to use')
     parser.add_argument('--epochs', type=int, default=100, help='number of training epochs')
     
@@ -103,12 +104,13 @@ def parse_option():
         parser.add_argument('--no_linear_bias', action='store_false', help='Use of bias in linear classifier.')
     
     if parser.parse_known_args()[0].classifier in ["lang-linear"]:
-        parser.add_argument('--word_embed_size', type=int, default=None, help='Word embedding classifier')
+        parser.add_argument('--word_embed_size', type=int, default=500, help='Word embedding classifier')
         
     if parser.parse_known_args()[0].classifier in ["lang-linear", "description-linear"]:
         parser.add_argument('--word_embed_path', type=str, default="word_embeds")
         parser.add_argument('--lang_classifier_bias', action='store_true', help='Use of bias in lang classifier.')
         parser.add_argument('--multip_fc', type=float, default=0.05)
+        parser.add_argument('--attention', action='store_true', help='Use of attention in lang classifier.')
         
     if parser.parse_known_args()[0].classifier in ["description-linear"]:
         parser.add_argument('--description_embed_path', type=str, default="description_embeds")
@@ -153,6 +155,11 @@ def parse_option():
 
     if opt.adam:
         opt.model_name = '{}_useAdam'.format(opt.model_name)
+        
+    if 'SLURM_JOB_ID' in os.environ:
+        job_id = os.environ['SLURM_JOB_ID']
+    else:
+        job_id = np.random.randint(100000, 999999, 1)[0]
 
     if opt.classifier == "description-linear":
         opt.model_name = '{}_trial_{}_classifier_{}_layer_{}_multip_{}_prefix_{}_{}'.format(opt.model_name, 
@@ -161,18 +168,18 @@ def parse_option():
                                                                                          opt.transformer_layer, 
                                                                                          opt.multip_fc,
                                                                                          opt.prefix_label,
-                                                                                         os.environ['SLURM_JOB_ID'])
+                                                                                         job_id)
     elif opt.classifier == "lang-linear":
         opt.model_name = '{}_trial_{}_classifier_{}_multip_{}_{}'.format(opt.model_name, 
                                                                        opt.trial, 
                                                                        opt.classifier,
                                                                        opt.multip_fc, 
-                                                                       os.environ['SLURM_JOB_ID'])
+                                                                       job_id)
     else:
         opt.model_name = '{}_trial_{}_classifier_{}_{}'.format(opt.model_name, 
                                                              opt.trial,
                                                              opt.classifier,
-                                                             os.environ['SLURM_JOB_ID'])
+                                                             job_id)
 
     opt.tb_folder = os.path.join(opt.tb_path, opt.model_name)
     if not os.path.isdir(opt.tb_folder):
@@ -336,6 +343,9 @@ def main():
 
     # routine: supervised pre-training
     for epoch in range(1, opt.epochs + 1):
+#         print("Before Epoch {}".format(epoch))
+#         ipdb.set_trace()
+        
 
         if opt.cosine:
             scheduler.step()

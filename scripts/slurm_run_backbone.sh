@@ -14,7 +14,7 @@
 
 # Create the combinations of params for each array task,
 # and save them to a temp params file.
-DUMPED_PATH="/home/gridsan/akyurek/git/rfs-incremental/dumped/backbones/linear"
+export DUMPED_PATH="/home/gridsan/akyurek/git/rfs-incremental/dumped/backbones/"
 # FILE="$DUMPED_PATH/${SLURM_ARRAY_TASK_ID}_temp_hyperparameters.txt"
 # rm $FILE 
 
@@ -33,8 +33,8 @@ DUMPED_PATH="/home/gridsan/akyurek/git/rfs-incremental/dumped/backbones/linear"
 
 
 # Create log files
-LOG_STDOUT="${DUMPED_PATH}/${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.out"
-LOG_STDERR="${DUMPED_PATH}/${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.err"
+export LOG_STDOUT="${DUMPED_PATH}/${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.out"
+export LOG_STDERR="${DUMPED_PATH}/${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.err"
 
 # python train_supervised.py --trial pretrain \
 #                            --model_path dumped/backbones/label  \
@@ -42,11 +42,15 @@ LOG_STDERR="${DUMPED_PATH}/${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.err"
 #                            --multip_fc $MULTIPFC \
 #                            --classifier lang-linear \
 #                            --word_embed_size 500 > $LOG_STDOUT 2> $LOG_STDERR
-
-python train_supervised.py --trial pretrain \
+export DUMPED_PATH="/afs/csail.mit.edu/u/a/akyurek/akyurek/feyza/git/rfs-incremental/dumped/backbones/c-x-concat"
+export DATA_PATH="/afs/csail.mit.edu/u/a/akyurek/akyurek/git/rfs-incremental/data"
+export WORD_EMBEDS="/afs/csail.mit.edu/u/a/akyurek/akyurek/feyza/git/rfs-incremental/word_embeds"
+CUDA_VISIBLE_DEVICES=14 python train_supervised.py --trial pretrain \
                             --model_path $DUMPED_PATH \
                             --tb_path tb \
-                            --data_root data \
-                            --classifier linear \
+                            --data_root $DATA_PATH \
+                            --classifier lang-linear \
+                            --attention \
+                            --word_embed_path $WORD_EMBEDS \
                             --no_linear_bias > $LOG_STDOUT 2> $LOG_STDERR
                            
