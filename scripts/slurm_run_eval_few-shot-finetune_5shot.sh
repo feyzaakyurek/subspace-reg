@@ -64,20 +64,22 @@ python eval_incremental.py --model_path $BACKBONE_PATH \
 
 
 # # No language fine tuning few-shot
-# export DUMPED_PATH="/home/gridsan/akyurek/git/rfs-incremental/dumped"
-# export LOG_STDOUT="${DUMPED_PATH}/8071815_9.out"
-# export LOG_STDERR="${DUMPED_PATH}/8071815_9.err"
-# BACKBONE_PATH="${DUMPED_PATH}/backbones/linear/resnet12_miniImageNet_linear_classifier_wbias/resnet12_last.pth"
-# python eval_incremental.py --model_path $BACKBONE_PATH \
-#                            --data_root data \
-#                            --n_shots 5 \
-#                            --eval_mode few-shot-incremental-fine-tune \
-#                            --classifier linear \
-#                            --novel_epochs 20 \
-#                            --learning_rate 0.002 \
-#                            --freeze_backbone_at 1 \
-#                            --lmbd_reg_transform_w 0.3 \
-#                            --target_train_loss 0.6 >> $LOG_STDOUT 2>> $LOG_STDERR
+export DUMPED_PATH="/home/gridsan/akyurek/git/rfs-incremental/dumped"
+export LOG_STDOUT="${DUMPED_PATH}/8071815_9.out"
+export LOG_STDERR="${DUMPED_PATH}/8071815_9.err"
+export BACKBONE_PATH="${DUMPED_PATH}/backbones/linear/resnet12_miniImageNet_linear_classifier_wbias/resnet12_last.pth"
+python tsne_eval_incremental.py --model_path $BACKBONE_PATH \
+                           --data_root data \
+                           --n_shots 79 \
+                           --classifier linear \
+                           --eval_mode few-shot-incremental-fine-tune \
+                           --novel_epochs 20 \
+                           --learning_rate 0.002 \
+                           --freeze_backbone_at 1 \
+                           --lmbd_reg_transform_w 0.3 \
+                           --target_train_loss 0.6 >> $LOG_STDOUT 2>> $LOG_STDERR
+                           
+
 
 # Checklist to run an array job.
 # 1. Make sure total number of experiments matches the array param in sbatch.
