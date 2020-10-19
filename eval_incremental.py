@@ -254,10 +254,13 @@ def main():
     else:
         vocab = None
 
-    model = create_model(opt.model, n_cls, opt, vocab=vocab, dataset=opt.dataset)
+    
     ckpt = torch.load(opt.model_path)
+    if opt.classifier =="linear":
+        opt.no_linear_bias = ckpt['opt'].no_linear_bias
+    model = create_model(opt.model, n_cls, opt, vocab=vocab, dataset=opt.dataset)
     print("Loading model...")
-    model.load_state_dict(ckpt['model'], strict=False)
+    model.load_state_dict(ckpt['model'])
 
     if torch.cuda.is_available():
         model = model.cuda()
