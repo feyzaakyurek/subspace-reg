@@ -106,8 +106,8 @@ class ImageNet(Dataset):
 
 class MetaImageNet(ImageNet):
 
-    def __init__(self, args, partition='train', train_transform=None, test_transform=None, fix_seed=True):
-        super(MetaImageNet, self).__init__(args, partition, False)
+    def __init__(self, args, partition='train', train_transform=None, test_transform=None, fix_seed=True, pretrain=False):
+        super(MetaImageNet, self).__init__(args, partition, pretrain)
         self.fix_seed = fix_seed
         self.n_ways = args.n_ways
         self.n_shots = args.n_shots
@@ -144,6 +144,7 @@ class MetaImageNet(ImageNet):
                 self.data[self.labels[idx]] = []
             self.data[self.labels[idx]].append(self.imgs[idx])
         self.classes = list(self.data.keys())
+        print("Self.classes", self.classes)
 
     def __getitem__(self, item):
         if self.fix_seed:
