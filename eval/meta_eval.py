@@ -658,7 +658,10 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
     basenet = copy.deepcopy(net).cuda()
 
     base_weight = basenet.classifier.weight.clone().detach().requires_grad_(False)
-    base_bias   = basenet.classifier.bias.clone().detach().requires_grad_(False)
+    if basenet.classifier.bias is not None:
+        base_bias   = basenet.classifier.bias.clone().detach().requires_grad_(False)
+    else:
+        base_bias = None
 
     base_valloader_it = iter(base_val_loader)
     meta_valloader_it = iter(meta_valloader)
