@@ -204,8 +204,8 @@ class LangLinearClassifier(nn.Module):
             self.softmax = nn.Softmax(dim=1)
             self.transform_W_key = nn.Parameter(torch.Tensor(dim,cdim), requires_grad=True)
             self.transform_W_value = nn.Parameter(torch.Tensor(dim,cdim), requires_grad=True)
-            self.transform_W_output = nn.Parameter(torch.Tensor(num_classes,2*cdim), requires_grad=True)
-#             self.transform_W_output = nn.Parameter(torch.Tensor(num_classes,cdim), requires_grad=True)
+#             self.transform_W_output = nn.Parameter(torch.Tensor(num_classes,2*cdim), requires_grad=True)
+            self.transform_W_output = nn.Parameter(torch.Tensor(num_classes,cdim), requires_grad=True)
             
             nn.init.kaiming_uniform_(self.transform_W_key, a=math.sqrt(5))
             nn.init.kaiming_uniform_(self.transform_W_value, a=math.sqrt(5))
@@ -236,8 +236,8 @@ class LangLinearClassifier(nn.Module):
         if self.attention:
             x = input @ torch.transpose((self.embed @ self.transform_W_key),0,1) # Bxnum_classes key values
             x = self.softmax(x) @ (self.embed @ self.transform_W_value)  # Bx640 context vector
-            input = torch.cat((input,x),1)
-#             input = input + x
+#             input = torch.cat((input,x),1)
+            input = input + x
         return F.linear(input, self.weight, self.bias)
 
 

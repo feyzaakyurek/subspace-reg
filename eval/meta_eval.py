@@ -193,7 +193,8 @@ def drop_a_dim(data): #TODO why do we need this in the first place?
 def few_shot_language_incremental_test(net, ckpt, criterion, meta_valloader, base_val_loader, opt, vis=False):
     if vis:
         df = pd.DataFrame(columns=['idx', 'class', 'isbase', 'predicted', 'img'])
-
+    attention = opt.attention
+    assert net.classifier.attention == attention
     acc_novel = []
     acc_base = []
     running_avg = []
@@ -204,10 +205,17 @@ def few_shot_language_incremental_test(net, ckpt, criterion, meta_valloader, bas
         basenet.classifier.multip_fc = nn.Parameter(torch.FloatTensor([opt.multip_fc]), requires_grad=False)
 
     embed = basenet.classifier.embed.clone().detach().requires_grad_(False)
-    trns  = basenet.classifier.transform_W.clone().detach().requires_grad_(False)
-    orig_classifier_weights = embed @ trns if opt.lmbd_reg_transform_w else None
-    print("Retrieved original classifier weights.")
-    print(net)
+    
+    if attention:
+        if opt.lmbd_reg_transform_w:
+            orig_classifier_weights = basenet.classifier.transform_W_output.clone().detach().requires_grad_(False)
+        else:
+            orig_classifier_weights = None
+    else:
+        trns = basenet.classifier.transform_W.clone().detach().requires_grad_(False)
+        orig_classifier_weights = embed @ trns if opt.lmbd_reg_transform_w else None
+        print("Retrieved original classifier weights.")
+    
     base_valloader_it = iter(base_val_loader)
     meta_valloader_it = iter(meta_valloader)
     print("Created iterators.")
@@ -236,7 +244,8 @@ def few_shot_language_incremental_test(net, ckpt, criterion, meta_valloader, bas
         net = copy.deepcopy(basenet)
         net.train()
         classifier = net.classifier
-
+        multip_fc = classifier.multip_fc.detach().clone().cpu().item()
+        
         if opt.classifier == "lang-linear":
 
             # Create the language classifier which uses only novel class names' embeddings
@@ -248,7 +257,8 @@ def few_shot_language_incremental_test(net, ckpt, criterion, meta_valloader, bas
                                                     cdim=640,
                                                     bias=opt.lang_classifier_bias,
                                                     verbose=False,
-                                                    multip_fc=opt.multip_fc) # TODO!!
+                                                    multip_fc=multip_fc,
+                                                    attention=attention) # TODO!!
 
         else: # Description linear classifier
 
@@ -264,7 +274,8 @@ def few_shot_language_incremental_test(net, ckpt, criterion, meta_valloader, bas
                                                     bias=opt.lang_classifier_bias,
                                                     description=True,
                                                     verbose=False,
-                                                    multip_fc=opt.multip_fc)
+                                                    multip_fc=multip_fc,
+                                                    attention=attention)
 
         novel_embeds = dummy_classifier.embed.detach().cuda()
 
@@ -272,6 +283,8 @@ def few_shot_language_incremental_test(net, ckpt, criterion, meta_valloader, bas
         # Update the trained classifier of the network to accommodate for the new classes
         classifier.embed = nn.Parameter(torch.cat([embed, novel_embeds], 0),
                                         requires_grad=False) # TODO:CHECK DIM.
+        if attention:
+            classifier.transform_W_output = nn.Parameter(torch.cat([classifier.transform_W_output, dummy_classifier.weight.detach().cuda()], 0), requires_grad=True)
 
         # Validate before training.
         test_acc, test_acc_top5, test_loss, _ = validate_fine_tune(query_xs, query_ys_id, net, criterion, opt)

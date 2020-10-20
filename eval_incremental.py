@@ -92,7 +92,7 @@ def parse_option():
 
 
     if parser.parse_known_args()[0].classifier in ["lang-linear", "description-linear"]:
-        parser.add_argument('--word_embed_size', type=int, default=None,
+        parser.add_argument('--word_embed_size', type=int, default=500,
                             help='Word embedding classifier')
         parser.add_argument('--word_embed_path', type=str, default="word_embeds",
                             help='Where to store word embeds pickles for dataset.')
@@ -101,6 +101,7 @@ def parse_option():
         parser.add_argument('--lang_classifier_bias', action='store_true',
                             help='Use of bias in lang classifier.')
         parser.add_argument('--multip_fc', type=float, default=0.05)
+        parser.add_argument('--attention', action='store_true', help='Use of attention in lang classifier.')
 
     if parser.parse_known_args()[0].eval_mode in ['zero-shot-incremental']:
         parser.add_argument('--num_novel_combs', type=int, default=0.05,
