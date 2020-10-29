@@ -165,7 +165,8 @@ class MetaImageNet(ImageNet):
                                   "zero-shot",
                                   "zero-shot-incremental",
                                   "few-shot-language-incremental",
-                                  "few-shot-incremental-fine-tune"]:
+                                  "few-shot-incremental-fine-tune",
+                                  "few-shot-incremental-language-pretrain-linear-tune"]:
                 lbl = cls
             support_ys.append([lbl] * self.n_shots) #
             query_xs_ids = np.setxor1d(np.arange(imgs.shape[0]), support_xs_ids_sampled)

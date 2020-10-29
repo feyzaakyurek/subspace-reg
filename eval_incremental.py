@@ -26,7 +26,8 @@ from dataset.tiered_imagenet import MetaTieredImageNet
 from dataset.cifar import MetaCIFAR100
 from dataset.transform_cfg import transforms_test_options, transforms_list
 
-from eval.meta_eval import meta_test, incremental_test, zero_shot_test, zero_shot_incremental_test, few_shot_language_incremental_test, few_shot_finetune_incremental_test
+from eval.meta_eval import meta_test, incremental_test, zero_shot_test, zero_shot_incremental_test, \
+few_shot_language_incremental_test, few_shot_finetune_incremental_test, few_shot_language_pretrain_linear_tune
 from eval.cls_eval import incremental_validate
 from util import create_and_save_embeds, restricted_float, create_and_save_descriptions
 
@@ -68,8 +69,13 @@ def parse_option():
     parser.add_argument('--test_base_batch_size', type=int, default=50, metavar='test_batch_size',
                         help='Size of test batch)')
     parser.add_argument('--eval_mode', type=str,
-                        choices=['few-shot', 'few-shot-incremental', 'zero-shot', 'few-shot-incremental-fine-tune',
-                                 'zero-shot-incremental', 'few-shot-language-incremental'])
+                        choices=['few-shot', 
+                                 'few-shot-incremental', 
+                                 'zero-shot', 
+                                 'few-shot-incremental-fine-tune',
+                                 'zero-shot-incremental', 
+                                 'few-shot-language-incremental', 
+                                 "few-shot-incremental-language-pretrain-linear-tune"])
 
     parser.add_argument('--classifier', type=str,
                         choices=['linear', 'lang-linear', 'description-linear'])
@@ -86,7 +92,8 @@ def parse_option():
     if parser.parse_known_args()[0].eval_mode in ["zero-shot-incremental",
                                                   "few-shot-incremental",
                                                   "few-shot-language-incremental",
-                                                  'few-shot-incremental-fine-tune']:
+                                                  "few-shot-incremental-fine-tune",
+                                                  "few-shot-incremental-language-pretrain-linear-tune"]:
         parser.add_argument("--neval_episodes", type=int, default=2000,
                             help="Number of evaluation episodes both for base and novel.")
 
@@ -96,18 +103,20 @@ def parse_option():
                             help='Word embedding classifier')
         parser.add_argument('--word_embed_path', type=str, default="word_embeds",
                             help='Where to store word embeds pickles for dataset.')
-
-    if parser.parse_known_args()[0].classifier in ["lang-linear", "description-linear"]:
         parser.add_argument('--lang_classifier_bias', action='store_true',
                             help='Use of bias in lang classifier.')
         parser.add_argument('--multip_fc', type=float, default=0.05)
         parser.add_argument('--attention', action='store_true', help='Use of attention in lang classifier.')
+        parser.add_argument('--orig_alpha', type=float, default=1.0)
 
     if parser.parse_known_args()[0].eval_mode in ['zero-shot-incremental']:
         parser.add_argument('--num_novel_combs', type=int, default=0.05,
                             help='Number of combinations of novel/test classes to evaluate base samples against:)')
 
-    if parser.parse_known_args()[0].eval_mode in ["few-shot-language-incremental", 'few-shot-incremental-fine-tune']:
+    if parser.parse_known_args()[0].eval_mode in ["few-shot-language-incremental", 
+                                                  "few-shot-incremental-fine-tune",
+                                                  "few_shot_language_pretrain_linear_tune",
+                                                  "few-shot-incremental-language-pretrain-linear-tune"]:
         parser.add_argument('--novel_epochs', type=int, default=15, help='number of epochs for novel support set.')
         parser.add_argument('--learning_rate', type=float, default=0.01, help='learning rate')
         parser.add_argument('--weight_decay', type=float, default=5e-4, help='weight decay')
@@ -261,8 +270,12 @@ def main():
         opt.no_linear_bias = ckpt['opt'].no_linear_bias
     model = create_model(opt.model, n_cls, opt, vocab=vocab, dataset=opt.dataset)
     print("Loading model...")
-    model.load_state_dict(ckpt['model'])
-
+    try:
+        model.load_state_dict(ckpt['model'])
+    except Exception as e:
+        print(e)
+        model.load_state_dict(ckpt['model'], strict=False)
+        
     if torch.cuda.is_available():
         model = model.cuda()
         cudnn.benchmark = True
@@ -382,6 +395,41 @@ def main():
 #            'test_acc_novel_avg': novel[0],
 #            'test_acc_base_avg': base[0],
 #            'test_acc_avg_both': avg_score})
+    elif opt.eval_mode == "few-shot-incremental-language-pretrain-linear-tune":
+        assert opt.classifier in ["lang-linear", "description-linear"]
+
+        criterion = nn.CrossEntropyLoss()
+        start = time.time()
+        opt.split = "val"
+        novel, base = few_shot_language_pretrain_linear_tune(model,
+                                                         ckpt,
+                                                         criterion,
+                                                         meta_valloader,
+                                                         base_val_loader,
+                                                         opt)
+        val_time = time.time() - start
+        avg_score = (base[0]+novel[0])/2
+        print('val_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel[0], novel[1], val_time))
+        print('val_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base[0], base[1], val_time))
+        print('val_acc_average: {:.4f}'.format(avg_score))
+#         run.log({
+#            'val_acc_novel_avg': novel[0],
+#            'val_acc_base_avg': base[0],
+#            'val_acc_avg_both': avg_score})
+
+        start = time.time()
+        opt.split = "test"
+        novel, base = few_shot_language_pretrain_linear_tune(model,
+                                                         ckpt,
+                                                         criterion,
+                                                         meta_testloader,
+                                                         base_test_loader,
+                                                         opt)
+        test_time = time.time() - start
+        avg_score = (base[0]+novel[0])/2
+        print('test_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel[0], novel[1], test_time))
+        print('test_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base[0], base[1], test_time))
+        print('test_acc_average: {:.4f}'.format(avg_score))
 
     elif opt.eval_mode == 'few-shot-incremental-fine-tune':
         assert opt.classifier == "linear"
