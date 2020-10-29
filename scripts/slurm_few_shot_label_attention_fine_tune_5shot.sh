@@ -62,14 +62,14 @@
 
 # For debugging.                           
 
-export DUMPED_PATH="/afs/csail.mit.edu/u/a/akyurek/akyurek/feyza/git/rfs-incremental/dumped"
-export LOG_STDOUT="${DUMPED_PATH}/3453264.out" #random
-export LOG_STDERR="${DUMPED_PATH}/3453264.err" #random
-export BACKBONE_PATH="${DUMPED_PATH}/backbones/c-x-concat/resnet12_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain_classifier_lang-linear_multip_0.05_630620/resnet12_last.pth"
+export DUMPED_PATH="/home/gridsan/groups/akyureklab/rfs-incremental/dumped/dumped_feyza"
+# export LOG_STDOUT="${DUMPED_PATH}/3453264.out" #random
+# export LOG_STDERR="${DUMPED_PATH}/3453264.err" #random
+export BACKBONE_PATH="${DUMPED_PATH}/backbones/c-x-sum/resnet12_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain_classifier_lang-linear_multip_0.05_858201/resnet12_last.pth"
 # export BACKBONE_PATH="${DUMPED_PATH}/backbones/c-x-sum/resnet12_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain_classifier_lang-linear_multip_0.05_858201/resnet12_last.pth"
-export DATA_PATH="/afs/csail.mit.edu/u/a/akyurek/akyurek/git/rfs-incremental/data"
-export WORD_EMBEDS="/afs/csail.mit.edu/u/a/akyurek/akyurek/feyza/git/rfs-incremental/word_embeds"
-CUDA_VISIBLE_DEVICES=2 python eval_incremental.py --model_path $BACKBONE_PATH \
+export DATA_PATH="/home/gridsan/groups/akyureklab/rfs-incremental/data"
+export WORD_EMBEDS="/home/gridsan/groups/akyureklab/rfs-incremental/word_embeds"
+python eval_incremental.py --model_path $BACKBONE_PATH \
                            --data_root $DATA_PATH \
                            --n_shots 5 \
                            --classifier lang-linear \
@@ -77,8 +77,8 @@ CUDA_VISIBLE_DEVICES=2 python eval_incremental.py --model_path $BACKBONE_PATH \
                            --novel_epochs 20 \
                            --learning_rate 0.002 \
                            --freeze_backbone_at 1 \
-                           --lmbd_reg_transform_w 0.5 \
-                           --attention \
+                           --lmbd_reg_transform_w 0.6 \
+                           --attention sum \
                            --word_embed_path $WORD_EMBEDS \
                            --target_train_loss 0.7 > $LOG_STDOUT 2> $LOG_STDERR
                            

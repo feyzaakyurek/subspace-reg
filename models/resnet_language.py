@@ -154,7 +154,7 @@ class BasicBlock(nn.Module):
 class LangLinearClassifier(nn.Module):
     def __init__(self, vocab,  load_embeds, dim, description=False,
                  cdim=640, bias=False, verbose=True, multip_fc=0.15,
-                 attention=False):
+                 attention=None):
         super(LangLinearClassifier, self).__init__()
         self.vocab = vocab
         self.dim = dim
@@ -199,12 +199,13 @@ class LangLinearClassifier(nn.Module):
 
         self.embed = nn.Parameter(embed_tensor * multip_fc, requires_grad=False)
         
-        if self.attention:
+        if self.attention is not None:
             num_classes = embed_tensor.size()[0]
             self.softmax = nn.Softmax(dim=1)
             self.transform_W_key = nn.Parameter(torch.Tensor(dim,cdim), requires_grad=True)
             self.transform_W_value = nn.Parameter(torch.Tensor(dim,cdim), requires_grad=True)
-            self.transform_W_output = nn.Parameter(torch.Tensor(num_classes,2*cdim), requires_grad=True)
+            sz = 2 if attention == "concat" else 1
+            self.transform_W_output = nn.Parameter(torch.Tensor(num_classes,sz*cdim), requires_grad=True)
 #             self.transform_W_output = nn.Parameter(torch.Tensor(num_classes,cdim), requires_grad=True)
             
             nn.init.kaiming_uniform_(self.transform_W_key, a=math.sqrt(5))
@@ -227,18 +228,24 @@ class LangLinearClassifier(nn.Module):
 
     @property
     def weight(self):
-        if self.attention:
+        if self.attention is not None:
             return self.transform_W_output #TODO
         else:
             return self.embed @ self.transform_W
 
-    def forward(self, input):
-        if self.attention:
-            x = input @ torch.transpose((self.embed @ self.transform_W_key),0,1) # Bxnum_classes key values
-            x = self.softmax(x) @ (self.embed @ self.transform_W_value)  # Bx640 context vector
-            input = torch.cat((input,x),1)
-#             input = input + x
-        return F.linear(input, self.weight, self.bias)
+    def forward(self, x):
+        if self.attention is not None:
+            c = x @ torch.transpose((self.embed @ self.transform_W_key),0,1) # Bxnum_classes key values
+            c = self.softmax(c) @ (self.embed @ self.transform_W_value)  # Bx640 context vector
+
+            if self.attention == "sum":
+                x = x + c
+            elif self.attention == "concat":
+                x = torch.cat((x,c),1)
+            else: # context only
+                x = c
+
+        return F.linear(x, self.weight, self.bias)
 
 
 class ResNet(nn.Module):

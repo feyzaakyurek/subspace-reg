@@ -101,7 +101,7 @@ def parse_option():
         parser.add_argument('--lang_classifier_bias', action='store_true',
                             help='Use of bias in lang classifier.')
         parser.add_argument('--multip_fc', type=float, default=0.05)
-        parser.add_argument('--attention', action='store_true', help='Use of attention in lang classifier.')
+        parser.add_argument('--attention', type=str, choices=["sum","concat","context"], default=None, help='Use of attention in lang classifier.')
 
     if parser.parse_known_args()[0].eval_mode in ['zero-shot-incremental']:
         parser.add_argument('--num_novel_combs', type=int, default=0.05,
