@@ -449,7 +449,9 @@ def eval_base(net, base_batch, criterion, vocab_all, df=None):
     net.eval()
     with torch.no_grad():
 #         for idb, (input, target, _) in enumerate(base_val_loader):
-        input, target, _ = base_batch
+        input, target, *_ = base_batch
+        input = input.squeeze(0)
+        target = target.squeeze(0)
         imgdata = input.detach().numpy()
         input  = input.float().cuda()
         output = net(input).detach().cpu()

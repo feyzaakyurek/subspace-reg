@@ -15,10 +15,14 @@
 # Create the combinations of params for each array task,
 # and save them to a temp params file.sc
 DUMPED_PATH="/home/gridsan/groups/akyureklab/rfs-incremental/dumped/"
+BACKBONE_PATH="${DUMPED_PATH}/backbones/c-x-sum/resnet12_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain_classifier_lang-linear_multip_0.05_858201/resnet12_last.pth"
+DATA_PATH="/home/gridsan/groups/akyureklab/rfs-incremental/data"
+WORD_EMBEDS="/home/gridsan/groups/akyureklab/rfs-incremental/word_embeds"
 FILE="$DUMPED_PATH/${SLURM_ARRAY_TASK_ID}_temp_hyperparameters.txt"
 rm $FILE 
 
-for LMBD in 0.5 0.6; do
+
+for LMBD in 0.5; do
     for TRLOSS in 0.7; do
         for NOVELEPOCH in 20; do
             for LR in 0.002; do 
@@ -44,17 +48,20 @@ LOG_STDERR="${DUMPED_PATH}/${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.err"
 # BACKBONE_PATH="${DUMPED_PATH}/backbones/label+desc/resnet12_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain_layer_${LAYER}_multip_${MULTIPFC}/resnet12_last.pth" # label+desc
 
 
-# LABEL ONLY FEW-SHOT FINETUNING
-BACKBONE_PATH="${DUMPED_PATH}/backbones/linear/resnet12_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain_classifier_linear_8075566/resnet12_last.pth"
+# LABEL ONLY FEW-SHOT FINETUNING USING PRE-SPECIFIED EPIDODES
+# BACKBONE_PATH="${DUMPED_PATH}/backbones/linear/resnet12_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain_classifier_linear_8075566/resnet12_last.pth"
 
 python eval_incremental.py --model_path $BACKBONE_PATH \
-                           --data_root data \
+                           --data_root $DATA_PATH \
                            --n_shots 5 \
-                           --eval_mode few-shot-incremental-fine-tune \
-                           --classifier linear \
+                           --eval_mode few-shot-language-incremental \
+                           --classifier lang-linear \
                            --novel_epochs $NOVELEPOCH \
                            --learning_rate $LR \
                            --freeze_backbone_at 1 \
+                           --attention sum \
+                           --use_episodes \
+                           --word_embed_path $WORD_EMBEDS \
                            --lmbd_reg_transform_w $LMBD \
                            --target_train_loss $TRLOSS > $LOG_STDOUT 2> $LOG_STDERR
                            
@@ -62,26 +69,26 @@ python eval_incremental.py --model_path $BACKBONE_PATH \
 
 # For debugging.                           
 
-export DUMPED_PATH="/home/gridsan/groups/akyureklab/rfs-incremental/dumped/dumped_feyza"
-# export LOG_STDOUT="${DUMPED_PATH}/3453264.out" #random
-# export LOG_STDERR="${DUMPED_PATH}/3453264.err" #random
-export BACKBONE_PATH="${DUMPED_PATH}/backbones/c-x-sum/resnet12_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain_classifier_lang-linear_multip_0.05_858201/resnet12_last.pth"
+# export DUMPED_PATH="/home/gridsan/groups/akyureklab/rfs-incremental/dumped/dumped_feyza"
+# # export LOG_STDOUT="${DUMPED_PATH}/3453264.out" #random
+# # export LOG_STDERR="${DUMPED_PATH}/3453264.err" #random
 # export BACKBONE_PATH="${DUMPED_PATH}/backbones/c-x-sum/resnet12_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain_classifier_lang-linear_multip_0.05_858201/resnet12_last.pth"
-export DATA_PATH="/home/gridsan/groups/akyureklab/rfs-incremental/data"
-export WORD_EMBEDS="/home/gridsan/groups/akyureklab/rfs-incremental/word_embeds"
-python eval_incremental.py --model_path $BACKBONE_PATH \
-                           --data_root $DATA_PATH \
-                           --n_shots 5 \
-                           --classifier lang-linear \
-                           --eval_mode few-shot-language-incremental \
-                           --novel_epochs 20 \
-                           --learning_rate 0.002 \
-                           --freeze_backbone_at 1 \
-                           --lmbd_reg_transform_w 0.5 \
-                           --attention sum \
-                           --use_episodes \
-                           --word_embed_path $WORD_EMBEDS \
-                           --target_train_loss 0.7 # > $LOG_STDOUT 2> $LOG_STDERR
+# # export BACKBONE_PATH="${DUMPED_PATH}/backbones/c-x-sum/resnet12_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain_classifier_lang-linear_multip_0.05_858201/resnet12_last.pth"
+# export DATA_PATH="/home/gridsan/groups/akyureklab/rfs-incremental/data"
+# export WORD_EMBEDS="/home/gridsan/groups/akyureklab/rfs-incremental/word_embeds"
+# python eval_incremental.py --model_path $BACKBONE_PATH \
+#                            --data_root $DATA_PATH \
+#                            --n_shots 5 \
+#                            --classifier lang-linear \
+#                            --eval_mode few-shot-language-incremental \
+#                            --novel_epochs 20 \
+#                            --learning_rate 0.002 \
+#                            --freeze_backbone_at 1 \
+#                            --lmbd_reg_transform_w 0.5 \
+#                            --attention sum \
+#                            --use_episodes \
+#                            --word_embed_path $WORD_EMBEDS \
+#                            --target_train_loss 0.7 # > $LOG_STDOUT 2> $LOG_STDERR
                            
                            
                            

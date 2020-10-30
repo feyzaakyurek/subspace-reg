@@ -6,6 +6,8 @@ import torch
 from torch.utils.data import Dataset
 import torchvision.transforms as transforms
 import warnings
+import re
+import ipdb
 
 class ImageNet(Dataset):
     def __init__(self, args, partition='train', pretrain=True, is_sample=False, k=4096,
@@ -116,8 +118,9 @@ class MetaImageNet(ImageNet):
         self.n_test_runs = args.n_test_runs
         self.eval_mode = args.eval_mode
         self.n_aug_support_samples = args.n_aug_support_samples
+        self.use_episodes = args.use_episodes
 
-        if self.args.use_episodes:
+        if self.use_episodes:
 
             self.episode_support_ids = []
             self.episode_query_ids = []
@@ -128,26 +131,24 @@ class MetaImageNet(ImageNet):
                     if line.startswith("TEST"):
                         is_val = False
 
-                    if (self.pretrain and partition == "val" and is_val) or
-                       (self.pretrain and partition == "test" and not is_val)
+                    if (self.pretrain and partition == "val" and is_val) or (self.pretrain and partition == "test" and not is_val):
 
-                       if line.startswith("Base Query"):
-                            arr = re.split(': ', line)[1]
+                        if line.startswith("Base Query"):
+                            arr = re.split(': ', line)[1].rstrip()
                             arr = list(map(int,filter(None,
                                   arr.lstrip('[').rstrip(']').split(" "))))
-                            episode_query_ids.append(arr)
+                            self.episode_query_ids.append(arr)
 
-                    if (not self.pretrain and partition == "val" and is_val) or
-                       (not self.pretrain and partition == "test" and not is_val)
+                    if (not self.pretrain and partition == "val" and is_val) or (not self.pretrain and partition == "test" and not is_val):
 
                         if line.startswith("Novel"):
-                            arr = re.split(': ', line)[1]
+                            arr = re.split(': ', line)[1].rstrip()
                             arr = list(map(int,filter(None,
                                   arr.lstrip('[').rstrip(']').split(","))))
                             if line.startswith("Novel Support"):
-                                episode_support_ids.append(arr)
+                                self.episode_support_ids.append(arr)
                             else:
-                                episode_query_ids.append(arr)
+                                self.episode_query_ids.append(arr)
 
 
         if train_transform is None:
@@ -210,37 +211,62 @@ class MetaImageNet(ImageNet):
                 query_ys.append([lbl] * query_xs_ids.shape[0]) #
             support_xs, support_ys, query_xs, query_ys = np.array(support_xs), np.array(support_ys), np.array(query_xs), np.array(query_ys)
             num_ways, n_queries_per_way, height, width, channel = query_xs.shape
+            
+            query_xs = query_xs.reshape((num_ways * n_queries_per_way, height, width, channel))
+            query_ys = query_ys.reshape((num_ways * n_queries_per_way, ))
+
+            support_xs = support_xs.reshape((-1, height, width, channel))
+            if self.n_aug_support_samples > 1:
+                support_xs = np.tile(support_xs, (self.n_aug_support_samples, 1, 1, 1))
+                support_ys = np.tile(support_ys.reshape((-1, )), (self.n_aug_support_samples))
+            support_xs = np.split(support_xs, support_xs.shape[0], axis=0)
+            query_xs = query_xs.reshape((-1, height, width, channel))
+            query_xs = np.split(query_xs, query_xs.shape[0], axis=0)
+
+            support_xs = torch.stack(list(map(lambda x: self.train_transform(x.squeeze()), support_xs)))
+            query_xs = torch.stack(list(map(lambda x: self.test_transform(x.squeeze()), query_xs)))
+            
         else:
-            support_xs_ids_sampled = self.episode_support_ids[item]
-            support_xs = np.array(self.imgs[support_xs_ids_sampled])
             query_xs_ids = self.episode_query_ids[item]
             query_xs = np.array(self.imgs[query_xs_ids])
-            support_ys = self.labels[support_xs_ids_sampled]
-            assert (not self.pretrain) and (len(np.unique(support_ys)) == self.nways)
-            query_ys = self.labels[query_xs_ids]
+            query_ys = np.array([self.labels[i] for i in query_xs_ids])
+            _, height, width, channel = query_xs.shape
+            num_ways, n_queries_per_way = (self.n_ways, len(query_xs_ids) // self.n_ways)
 
-            _, height, width, channel = support_xs.shape()
-            num_ways, n_queries_per_way = (self.nways, len(query_xs_ids) // self.nways)
+            query_xs = query_xs.reshape((num_ways * n_queries_per_way, height, width, channel))
+            query_ys = query_ys.reshape((num_ways * n_queries_per_way, ))
+            query_xs = query_xs.reshape((-1, height, width, channel))
+            query_xs = np.split(query_xs, query_xs.shape[0], axis=0)
+            query_xs = torch.stack(list(map(lambda x: self.test_transform(x.squeeze()), query_xs)))
+            
+            if self.pretrain:
+                
+                support_xs = query_xs.squeeze(0)
+                support_ys = query_ys
+                
+            else:
+                
+                support_xs_ids_sampled = self.episode_support_ids[item]
+                support_xs = np.array(self.imgs[support_xs_ids_sampled])
+            
+                support_ys = np.array([self.labels[i] for i in support_xs_ids_sampled])
+                assert (not self.pretrain) and (len(np.unique(support_ys)) == self.n_ways)
 
-        query_xs = query_xs.reshape((num_ways * n_queries_per_way, height, width, channel))
-        query_ys = query_ys.reshape((num_ways * n_queries_per_way, ))
+                support_xs = support_xs.reshape((-1, height, width, channel))
+                if self.n_aug_support_samples > 1:
+                    support_xs = np.tile(support_xs, (self.n_aug_support_samples, 1, 1, 1))
+                    support_ys = np.tile(support_ys.reshape((-1, )), (self.n_aug_support_samples))
+                support_xs = np.split(support_xs, support_xs.shape[0], axis=0)
+                
 
-        support_xs = support_xs.reshape((-1, height, width, channel))
-        if self.n_aug_support_samples > 1:
-            support_xs = np.tile(support_xs, (self.n_aug_support_samples, 1, 1, 1))
-            support_ys = np.tile(support_ys.reshape((-1, )), (self.n_aug_support_samples))
-        support_xs = np.split(support_xs, support_xs.shape[0], axis=0)
-        query_xs = query_xs.reshape((-1, height, width, channel))
-        query_xs = np.split(query_xs, query_xs.shape[0], axis=0)
-
-        support_xs = torch.stack(list(map(lambda x: self.train_transform(x.squeeze()), support_xs)))
-        query_xs = torch.stack(list(map(lambda x: self.test_transform(x.squeeze()), query_xs)))
+                support_xs = torch.stack(list(map(lambda x: self.train_transform(x.squeeze()), support_xs)))
+                
 
         return support_xs, support_ys, query_xs, query_ys
 
     def __len__(self):
         if self.use_episodes:
-            return len(episode_support_ids)
+            return len(self.episode_query_ids)
         else:
             return self.n_test_runs
 

@@ -127,6 +127,7 @@ def parse_option():
         parser.add_argument('--lmbd_reg_transform_w',  type=float, default=None, help='learning rate')
         parser.add_argument('--target_train_loss',  type=float, default=0.8, help='learning rate')
         parser.add_argument('--saliency',  action='store_true', help='append label to the beginning description')
+        parser.add_argument('--use_episodes', action='store_true', help='use exact XtarNet episodes.')
 
     if parser.parse_known_args()[0].classifier in ["description-linear"]:
         parser.add_argument('--description_embed_path', type=str, default="description_embeds")
@@ -172,22 +173,44 @@ def main():
     if opt.dataset == 'miniImageNet':
         train_trans, test_trans = transforms_test_options[opt.transform]
 
-        train_loader = DataLoader(ImageNet(args=opt, partition='train', transform=train_trans), #FIXME: use train
-                                  batch_size=64, shuffle=True, drop_last=True,
-                                  num_workers=opt.num_workers)
+
 
         # load base evaluation dataset
-        base_val_loader = DataLoader(ImageNet(args=opt, partition='val', transform=test_trans),
-                                     batch_size=opt.test_base_batch_size // 2,
-                                     shuffle=True,
-                                     drop_last=False,
-                                     num_workers=opt.num_workers // 2)
+        if opt.use_episodes:
+            base_test_loader = DataLoader(MetaImageNet(args=opt, partition='test',
+                                                  train_transform=train_trans,
+                                                  test_transform=test_trans,
+                                                  fix_seed=True,
+                                                  pretrain=True),
+                                     batch_size=opt.test_batch_size, shuffle=True, drop_last=False,
+                                     num_workers=opt.num_workers)
+    
+            base_val_loader = DataLoader(MetaImageNet(args=opt, partition='val',
+                                                      train_transform=train_trans,
+                                                      test_transform=test_trans,
+                                                      fix_seed=True,
+                                                      pretrain=True),
+                                         batch_size=opt.test_batch_size, shuffle=True, drop_last=False,
+                                         num_workers=opt.num_workers)
+            train_loader = base_val_loader
+        else:
+            
+            train_loader = DataLoader(ImageNet(args=opt, partition='train', transform=train_trans), #FIXME: use train
+                                  batch_size=64, shuffle=True, drop_last=True,
+                                  num_workers=opt.num_workers)        
+            base_val_loader = DataLoader(ImageNet(args=opt, partition='val', transform=test_trans),
+                                         batch_size=opt.test_base_batch_size // 2,
+                                         shuffle=True,
+                                         drop_last=False,
+                                         num_workers=opt.num_workers // 2)
 
-        base_test_loader = DataLoader(ImageNet(args=opt, partition='test', transform=test_trans),
-                                      batch_size=opt.test_base_batch_size // 2,
-                                      shuffle=True,
-                                      drop_last=False,
-                                      num_workers=opt.num_workers // 2)
+            base_test_loader = DataLoader(ImageNet(args=opt, partition='test', transform=test_trans),
+                                          batch_size=opt.test_base_batch_size // 2,
+                                          shuffle=True,
+                                          drop_last=False,
+                                          num_workers=opt.num_workers // 2)
+
+        
 
         meta_testloader = DataLoader(MetaImageNet(args=opt, partition='test',
                                                   train_transform=train_trans,
