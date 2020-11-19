@@ -55,7 +55,7 @@ def parse_option():
     parser.add_argument('--batch_size', type=int, default=64, help='batch_size')
     parser.add_argument('--num_workers', type=int, default=8, help='num of workers to use')
     parser.add_argument('--epochs', type=int, default=100, help='number of training epochs')
-    
+
 
     # optimization
     parser.add_argument('--learning_rate', type=float, default=0.05, help='learning rate')
@@ -95,33 +95,35 @@ def parse_option():
                         help='The number of augmented samples for each meta test sample')
     parser.add_argument('--test_batch_size', type=int, default=1, metavar='test_batch_size',
                         help='Size of test batch)')
-    
-    parser.add_argument('--classifier', type=str, 
+    parser.add_argument('--use_episodes', action='store_true', help='use exact XtarNet episodes.')
+    parser.add_argument('--classifier', type=str,
                         choices=['linear', 'lang-linear', 'description-linear'])
     parser.add_argument('-t', '--trial', type=str, default='1', help='the experiment id')
-    
+
     if parser.parse_known_args()[0].classifier in ["linear"]:
         parser.add_argument('--no_linear_bias', action='store_false', help='Use of bias in linear classifier.')
-    
+
     if parser.parse_known_args()[0].classifier in ["lang-linear"]:
         parser.add_argument('--word_embed_size', type=int, default=500, help='Word embedding classifier')
-        
+
     if parser.parse_known_args()[0].classifier in ["lang-linear", "description-linear"]:
         parser.add_argument('--word_embed_path', type=str, default="word_embeds")
+        parser.add_argument('--word_embed_type', type=str, default="")
         parser.add_argument('--lang_classifier_bias', action='store_true', help='Use of bias in lang classifier.')
         parser.add_argument('--multip_fc', type=float, default=0.05)
+        parser.add_argument('--diag_reg', type=float, default=0.05)
         parser.add_argument('--attention', type=str, choices=["sum","concat","context"], default=None, help='Use of attention in lang classifier.')
-        
+
     if parser.parse_known_args()[0].classifier in ["description-linear"]:
         parser.add_argument('--description_embed_path', type=str, default="description_embeds")
         parser.add_argument('--desc_embed_model', type=str, default="bert-base-cased")
         parser.add_argument('--transformer_layer', type=int, default=6, help="which layer to use from transformer.w")
         parser.add_argument('--prefix_label', action='store_true', help='append label to the beginning description')
-        
+
     parser.add_argument('--eval_mode', type=str, default=None)
-    
+
     opt = parser.parse_args()
-        
+
     if opt.dataset == 'CIFAR-FS' or opt.dataset == 'FC100':
         opt.transform = 'D'
 
@@ -144,10 +146,10 @@ def parse_option():
     for it in iterations:
         opt.lr_decay_epochs.append(int(it))
 
-    opt.model_name = '{}_{}_lr_{}_decay_{}_trans_{}'.format(opt.model, 
-                                                            opt.dataset, 
+    opt.model_name = '{}_{}_lr_{}_decay_{}_trans_{}'.format(opt.model,
+                                                            opt.dataset,
                                                             opt.learning_rate,
-                                                            opt.weight_decay, 
+                                                            opt.weight_decay,
                                                             opt.transform)
 
     if opt.cosine:
@@ -155,28 +157,28 @@ def parse_option():
 
     if opt.adam:
         opt.model_name = '{}_useAdam'.format(opt.model_name)
-        
+
     if 'SLURM_JOB_ID' in os.environ:
         job_id = os.environ['SLURM_JOB_ID']
     else:
         job_id = np.random.randint(100000, 999999, 1)[0]
 
     if opt.classifier == "description-linear":
-        opt.model_name = '{}_trial_{}_classifier_{}_layer_{}_multip_{}_prefix_{}_{}'.format(opt.model_name, 
-                                                                                         opt.trial, 
+        opt.model_name = '{}_trial_{}_classifier_{}_layer_{}_multip_{}_prefix_{}_{}'.format(opt.model_name,
+                                                                                         opt.trial,
                                                                                          opt.classifier,
-                                                                                         opt.transformer_layer, 
+                                                                                         opt.transformer_layer,
                                                                                          opt.multip_fc,
                                                                                          opt.prefix_label,
                                                                                          job_id)
     elif opt.classifier == "lang-linear":
-        opt.model_name = '{}_trial_{}_classifier_{}_multip_{}_{}'.format(opt.model_name, 
-                                                                       opt.trial, 
+        opt.model_name = '{}_trial_{}_classifier_{}_multip_{}_{}'.format(opt.model_name,
+                                                                       opt.trial,
                                                                        opt.classifier,
-                                                                       opt.multip_fc, 
+                                                                       opt.multip_fc,
                                                                        job_id)
     else:
-        opt.model_name = '{}_trial_{}_classifier_{}_{}'.format(opt.model_name, 
+        opt.model_name = '{}_trial_{}_classifier_{}_{}'.format(opt.model_name,
                                                              opt.trial,
                                                              opt.classifier,
                                                              job_id)
@@ -191,19 +193,19 @@ def parse_option():
 
     opt.n_gpu = torch.cuda.device_count()
     print("Device count: ", opt.n_gpu)
-    
+
     # Print opt
-    
+
     # Add git commit hash
     process = subprocess.Popen(['git', 'rev-parse', '--short', 'HEAD'], shell=False, stdout=subprocess.PIPE)
     git_head_hash = process.communicate()[0].strip()
     opt.git_head_hash = git_head_hash.decode()
-    
+
     print("************* Training arguments *************")
     for arg in vars(opt):
         print(arg, getattr(opt, arg))
     print("End of arguments.\n")
-    
+
     return opt
 
 
@@ -287,16 +289,16 @@ def main():
                 raise NotImplementedError('dataset not supported: {}'.format(opt.dataset))
     else:
         raise NotImplementedError(opt.dataset)
-        
+
     # Save full dataset vocab if not available
     vocab_train = [name for name in train_loader.dataset.label2human if name != '']
     vocab_test = [name for name in meta_testloader.dataset.label2human if name != '']
     vocab_val = [name for name in meta_valloader.dataset.label2human if name != '']
     vocab = vocab_train + vocab_test + vocab_val
-        
+
     if opt.classifier == "lang-linear":
         create_and_save_embeds(opt, vocab)
-        
+
     if opt.classifier == "description-linear":
         create_and_save_descriptions(opt, vocab)
 
@@ -345,7 +347,7 @@ def main():
     for epoch in range(1, opt.epochs + 1):
 #         print("Before Epoch {}".format(epoch))
 #         ipdb.set_trace()
-        
+
 
         if opt.cosine:
             scheduler.step()
@@ -408,8 +410,13 @@ def train(epoch, train_loader, model, criterion, optimizer, opt):
             target = target.cuda()
 
         # ===================forward=====================
-        output = model(input)
-        loss = criterion(output, target)
+        if opt.attention is not None:
+            output, alphas = model(input, get_alphas=True)
+            loss = criterion(output, target) + opt.diag_reg * criterion(alphas, target)
+        else:
+            output = model(input)
+            loss = criterion(output, target)
+
         acc1, acc5 = accuracy(output, target, topk=(1, 5))
         losses.update(loss.item(), input.size(0))
         top1.update(acc1[0], input.size(0))

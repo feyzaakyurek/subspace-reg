@@ -205,7 +205,7 @@ def few_shot_language_incremental_test(net, ckpt, criterion, meta_valloader, bas
         basenet.classifier.multip_fc = nn.Parameter(torch.FloatTensor([opt.multip_fc]), requires_grad=False)
 
     embed = basenet.classifier.embed.clone().detach().requires_grad_(False)
-    
+
     if attention:
         if opt.lmbd_reg_transform_w:
             orig_classifier_weights = basenet.classifier.transform_W_output.clone().detach().requires_grad_(False)
@@ -215,7 +215,7 @@ def few_shot_language_incremental_test(net, ckpt, criterion, meta_valloader, bas
         trns = basenet.classifier.transform_W.clone().detach().requires_grad_(False)
         orig_classifier_weights = embed @ trns if opt.lmbd_reg_transform_w else None
         print("Retrieved original classifier weights.")
-    
+
     base_valloader_it = iter(base_val_loader)
     meta_valloader_it = iter(meta_valloader)
     print("Created iterators.")
@@ -242,10 +242,9 @@ def few_shot_language_incremental_test(net, ckpt, criterion, meta_valloader, bas
         support_ys_id = torch.LongTensor([orig2id[y] for y in support_ys])
 
         net = copy.deepcopy(basenet)
-        net.train()
         classifier = net.classifier
         multip_fc = classifier.multip_fc.detach().clone().cpu().item()
-        
+
         if opt.classifier == "lang-linear":
 
             # Create the language classifier which uses only novel class names' embeddings
@@ -319,6 +318,7 @@ def few_shot_language_incremental_test(net, ckpt, criterion, meta_valloader, bas
 
         while train_loss > opt.target_train_loss or epoch < opt.novel_epochs + 1:
             freeze_backbone_weights(net, opt, epoch)
+            net.train()
             train_acc, train_loss = fine_tune_novel(epoch,
                                                     support_xs,
                                                     support_ys_id,
@@ -352,7 +352,7 @@ def few_shot_language_incremental_test(net, ckpt, criterion, meta_valloader, bas
 
         # Compute avg of base and novel.
         avg_score = (acc_base_ + test_acc.item())/2
-        
+
         # Update trackers.
         acc_base.append(acc_base_)
         acc_novel.append(test_acc.item())
@@ -539,7 +539,7 @@ def zero_shot_test(net, loader, opt, is_norm=True, use_logit=False, novel_only=T
         else:
             return mean_confidence_interval(acc_novel)
 
-        
+
 
 def incremental_test(net, testloader, val_loader, alpha, use_logit=False, is_norm=True, classifier='LR', vis=False):
     acc_novel = []
@@ -669,7 +669,7 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
     acc_novel = []
     acc_base = []
     running_avg = []
-    
+
     basenet = copy.deepcopy(net).cuda()
 
     base_weight = basenet.classifier.weight.clone().detach().requires_grad_(False)
@@ -750,7 +750,7 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
                                image_formatter(novelimgs[i,:,:,:]))  for i in range(len(query_ys_id))]
                 df = df.append(pd.DataFrame(novel_info, columns=df.columns), ignore_index=True)
             epoch += 1
-        
+
 
         try:
             base_batch = next(base_valloader_it)
@@ -765,11 +765,11 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
             acc_base_ = eval_base(net, base_batch, criterion, vocab_all)
 
         avg_score = (acc_base_ + test_acc.item())/2
-        
+
         acc_base.append(acc_base_)
         acc_novel.append(test_acc.item())
         running_avg.append(avg_score)
-    
+
         print('\n{:25} {:}\n'
               '{:25} {:}\n'
               '{:25} {:}\n'
@@ -798,7 +798,7 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
         return mean_confidence_interval(acc_novel), mean_confidence_interval(acc_base)
 
 def few_shot_language_pretrain_linear_tune(net, ckpt, criterion, meta_valloader, base_val_loader, opt, vis=False):
-    
+
     if vis:
         df = pd.DataFrame(columns=['idx', 'class', 'isbase', 'predicted', 'img'])
 
@@ -935,7 +935,7 @@ def few_shot_language_pretrain_linear_tune(net, ckpt, criterion, meta_valloader,
                                                                                    net,
                                                                                    criterion,
                                                                                    opt)
-            acc_base_ = eval_base(net, base_batch, criterion, vocab_all)                                                                                  
+            acc_base_ = eval_base(net, base_batch, criterion, vocab_all)
             # Compute avg of base and novel.
             avg_score = (acc_base_ + test_acc.item())/2
 

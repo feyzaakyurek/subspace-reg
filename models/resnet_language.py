@@ -150,7 +150,7 @@ class BasicBlock(nn.Module):
 
         return out
 
-        
+
 class LangLinearClassifier(nn.Module):
     def __init__(self, vocab,  load_embeds, dim, description=False,
                  cdim=640, bias=False, verbose=True, multip_fc=0.15,
@@ -160,9 +160,10 @@ class LangLinearClassifier(nn.Module):
         self.dim = dim
         self.attention = attention
         self.multip_fc = nn.Parameter(torch.FloatTensor([multip_fc]), requires_grad=False)
+        self.dropout = nn.Dropout(0.5)
         bound = 1 / math.sqrt(cdim)
         assert os.path.exists(load_embeds)
-
+        self.ce = nn.CrossEntropyLoss()
         if description:
             words = vocab
         else:
@@ -198,7 +199,7 @@ class LangLinearClassifier(nn.Module):
                 embed_tensor[i] /= len(words)
 
         self.embed = nn.Parameter(embed_tensor * multip_fc, requires_grad=False)
-        
+
         if self.attention is not None:
             num_classes = embed_tensor.size()[0]
             self.softmax = nn.Softmax(dim=1)
@@ -207,11 +208,11 @@ class LangLinearClassifier(nn.Module):
             sz = 2 if attention == "concat" else 1
             self.transform_W_output = nn.Parameter(torch.Tensor(num_classes,sz*cdim), requires_grad=True)
 #             self.transform_W_output = nn.Parameter(torch.Tensor(num_classes,cdim), requires_grad=True)
-            
+
             nn.init.kaiming_uniform_(self.transform_W_key, a=math.sqrt(5))
             nn.init.kaiming_uniform_(self.transform_W_value, a=math.sqrt(5))
             nn.init.kaiming_uniform_(self.transform_W_output, a=math.sqrt(5))
-            
+
         else:
 
             self.transform_W = nn.Parameter(torch.Tensor(dim,cdim), requires_grad=True)
@@ -219,7 +220,7 @@ class LangLinearClassifier(nn.Module):
 
             self.transform_B = nn.Parameter(torch.Tensor(len(vocab),cdim), requires_grad=True)
             nn.init.kaiming_uniform_(self.transform_B, a=math.sqrt(5))
-        
+
         if bias:
             self.bias = nn.Parameter(torch.Tensor(len(vocab)), requires_grad=True)
             nn.init.uniform_(self.bias, -bound, bound)
@@ -233,17 +234,20 @@ class LangLinearClassifier(nn.Module):
         else:
             return self.embed @ self.transform_W
 
-    def forward(self, x):
+    def forward(self, x, get_alphas=False):
         if self.attention is not None:
-            c = x @ torch.transpose((self.embed @ self.transform_W_key),0,1) # Bxnum_classes key values
-            c = self.softmax(c) @ (self.embed @ self.transform_W_value)  # Bx640 context vector
+            logits = x @ torch.transpose((self.embed @ self.transform_W_key),0,1) # Bxnum_classes key values
+            c = self.softmax(logits) @ (self.embed @ self.transform_W_value)  # Bx640 context vector
+
 
             if self.attention == "sum":
-                x = x + c
+                x = self.dropout(x) + c
             elif self.attention == "concat":
-                x = torch.cat((x,c),1)
+                x = torch.cat((self.dropout(x),c),1)
             else: # context only
                 x = c
+            if get_alphas:
+                return F.linear(x, self.weight, self.bias), logits
 
         return F.linear(x, self.weight, self.bias)
 
@@ -290,8 +294,10 @@ class ResNet(nn.Module):
             else:
                 if opt.classifier == "lang-linear":
                     embed_pth = os.path.join(opt.word_embed_path,
-                                             "{0}_dim{1}.pickle".format(opt.dataset,
-                                                                        opt.word_embed_size))
+                                             "{0}_dim{1}{2}.pickle".format(opt.dataset,
+                                                                        opt.word_embed_size,
+                                                                        opt.word_embed_type,
+                                                                        ))
                     self.classifier = LangLinearClassifier(vocab,
                                                            embed_pth,
                                                            cdim=640,
@@ -342,7 +348,7 @@ class ResNet(nn.Module):
         return nn.Sequential(*layers)
 
 
-    def forward(self, x, is_feat=False):
+    def forward(self, x, is_feat=False, get_alphas=False):
         x = self.layer1(x)
         f0 = x
         x = self.layer2(x)
@@ -356,7 +362,7 @@ class ResNet(nn.Module):
         x = x.view(x.size(0), -1)
         feat = x
         if self.num_classes > 0:
-            x = self.classifier(x)
+            x = self.classifier(x, get_alphas=get_alphas)
 
         if is_feat:
             return [f0, f1, f2, f3, feat], x
