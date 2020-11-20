@@ -110,7 +110,7 @@ def parse_option():
         parser.add_argument('--word_embed_path', type=str, default="word_embeds")
         parser.add_argument('--lang_classifier_bias', action='store_true', help='Use of bias in lang classifier.')
         parser.add_argument('--multip_fc', type=float, default=0.05)
-        parser.add_argument('--attention', action='store_true', help='Use of attention in lang classifier.')
+        parser.add_argument('--attention', type=str, choices=["sum","concat","context"], default=None, help='Use of attention in lang classifier.')
         
     if parser.parse_known_args()[0].classifier in ["description-linear"]:
         parser.add_argument('--description_embed_path', type=str, default="description_embeds")
@@ -410,7 +410,6 @@ def train(epoch, train_loader, model, criterion, optimizer, opt):
         # ===================forward=====================
         output = model(input)
         loss = criterion(output, target)
-
         acc1, acc5 = accuracy(output, target, topk=(1, 5))
         losses.update(loss.item(), input.size(0))
         top1.update(acc1[0], input.size(0))
