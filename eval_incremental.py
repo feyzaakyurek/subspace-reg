@@ -81,6 +81,8 @@ def parse_option():
                         choices=['linear', 'lang-linear', 'description-linear'])
     parser.add_argument('--track_weights', action='store_true',
                             help='Save the classifier weights to a csv file.')
+    parser.add_argument('--track_label_inspired_weights', action='store_true',
+                            help='Save the label inspired weights to a csv file.')
 
     if parser.parse_known_args()[0].eval_mode in ["zero-shot-incremental","few-shot-incremental"]:
 
@@ -120,6 +122,9 @@ def parse_option():
                             help='Use of Glove embeds instead of Vico.')
         parser.add_argument('--label_pull', type=float, default=None)
         
+        if parser.parse_known_args()[0].label_pull is not None:
+            parser.add_argument('--pulling', type=str, default="regularize",
+                            help='How should we leverage label inspired weights?')
 
     if parser.parse_known_args()[0].eval_mode in ['zero-shot-incremental']:
         parser.add_argument('--num_novel_combs', type=int, default=0.05,
@@ -204,6 +209,7 @@ def main():
                                          batch_size=opt.test_batch_size, shuffle=True, drop_last=False,
                                          num_workers=opt.num_workers)
             train_loader = base_val_loader
+            
         else:
             
             train_loader = DataLoader(ImageNet(args=opt, partition='train', transform=train_trans), #FIXME: use train
@@ -227,13 +233,13 @@ def main():
                                                   train_transform=train_trans,
                                                   test_transform=test_trans,
                                                   fix_seed=True),
-                                     batch_size=opt.test_batch_size, shuffle=True, drop_last=False,
+                                     batch_size=opt.test_batch_size, shuffle=False, drop_last=False,
                                      num_workers=opt.num_workers)
         meta_valloader = DataLoader(MetaImageNet(args=opt, partition='val',
                                                  train_transform=train_trans,
                                                  test_transform=test_trans,
                                                  fix_seed=True),
-                                    batch_size=opt.test_batch_size, shuffle=True, drop_last=False,
+                                    batch_size=opt.test_batch_size, shuffle=False, drop_last=False,
                                     num_workers=opt.num_workers)
         if opt.use_trainval:
             n_cls = 80
@@ -493,7 +499,7 @@ def main():
         print('val_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base[0], base[1], val_time))
         print('val_acc_average: {:.4f}'.format(avg_score))
         
-        if not opt.track_weights:
+        if not opt.track_weights and not opt.track_label_inspired_weights:
             start = time.time()
             opt.split = "test" # TODO: run only for best val.
 

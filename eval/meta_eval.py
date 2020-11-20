@@ -403,10 +403,10 @@ def fine_tune_novel(epoch, support_xs, support_ys_id, net, criterion, optimizer,
         len_vocab,_ = orig_classifier_weights.size()
         loss += opt.lmbd_reg_transform_w * torch.norm(net.classifier.weight[:len_vocab,:] - orig_classifier_weights)
         if orig_classifier_bias is not None:
-            loss += opt.lmbd_reg_transform_w * torch.norm(net.classifier.bias[:len_vocab] - orig_classifier_bias)
+            loss += opt.lmbd_reg_transform_w * torch.norm(net.classifier.bias[:len_vocab] - orig_classifier_bias)**2
             
-    if label_inspired_weights is not None:
-        loss += opt.label_pull * torch.norm(net.classifier.weight[len_vocab:,:] - label_inspired_weights)
+    if label_inspired_weights is not None and opt.pulling == "regularize":
+        loss += opt.label_pull * torch.norm(net.classifier.weight[len_vocab:,:] - label_inspired_weights)**2
 
     # Train
     optimizer.zero_grad()
@@ -668,6 +668,7 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
     acc_novel = []
     acc_base = []
     running_avg = []
+    pull_running_avg = []
     
     basenet = copy.deepcopy(net).cuda()
 
@@ -683,7 +684,8 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
 
     if opt.track_weights:
         track_weights = pd.DataFrame(columns=["episode", "type", "label", "class", "fine_tune_epoch", "classifier_weight"])
-        
+    if opt.track_label_inspired_weights:
+        track_inspired = pd.DataFrame(columns=["episode", "label", "fine_tune_epoch", "inspired_weight"])
     
 
     for idx in range(opt.neval_episodes):
@@ -740,9 +742,7 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
             softmax = nn.Softmax(dim=1)
             base_embeds = torch.cuda.FloatTensor(X[:len(vocab_base),:]) 
             novel_embeds = torch.cuda.FloatTensor(X[len(vocab_base):,:])
-#             label_inspired_weights = softmax(novel_embeds @ torch.transpose(base_embeds, 0, 1)) @ base_weight # 5 x 640 
-#         else:
-#             label_inspired_weights = None
+
 
         # Validate before training.
         test_acc, test_acc_top5, test_loss, _ = validate_fine_tune(query_xs, query_ys_id, net, criterion, opt)
@@ -768,8 +768,10 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
             freeze_backbone_weights(net, opt, epoch, exclude=["classifier"])
             
             base_weight = classifier.weight.clone().detach().requires_grad_(False)[:len(vocab_base),:]
-            if opt.label_pull:
-                label_inspired_weights = softmax(novel_embeds @ torch.transpose(base_embeds, 0, 1)) @ base_weight # 5 x 640 
+            if opt.label_pull is not None and opt.pulling == "regularize":
+                # save softmax here.
+                scores_over_labels = softmax(novel_embeds @ torch.transpose(base_embeds, 0, 1))
+                label_inspired_weights = scores_over_labels @ base_weight # 5 x 640 
             else:
                 label_inspired_weights = None
             
@@ -783,13 +785,21 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
                                                     opt,
                                                     label_inspired_weights,
                                                     base_bias)
+
             test_acc, test_acc_top5, test_loss, query_ys_pred = validate_fine_tune(query_xs,
                                                                                    query_ys_id,
                                                                                    net,
                                                                                    criterion,
                                                                                    opt)
+            
+            if opt.track_label_inspired_weights:
+                inspired_weights = label_inspired_weights.clone().cpu().numpy()
+                for k,lbl in enumerate(vocab_novel):
+                    track_inspired.loc[len(track_inspired)] = [idx, lbl, epoch, inspired_weights[k]]
+                
+                
             if opt.track_weights:
-                classifier_weights = classifier.weight.detach().cpu().numpy()
+                classifier_weights = classifier.weight.clone().detach().cpu().numpy()
                 for k,lbl in enumerate(vocab_base):
                     track_weights.loc[len(track_weights)] = [idx, "base", lbl, vocab_base[k], epoch, classifier_weights[k]]
                 len_base = len(vocab_base)
@@ -803,7 +813,8 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
                 df = df.append(pd.DataFrame(novel_info, columns=df.columns), ignore_index=True)
             epoch += 1
         
-
+       
+        
         try:
             base_batch = next(base_valloader_it)
         except StopIteration:
@@ -821,6 +832,28 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
         acc_base.append(acc_base_)
         acc_novel.append(test_acc.item())
         running_avg.append(avg_score)
+        
+        # Little pull here.
+        pull_acc_base_ = 0
+        pull_test_acc = 0
+        if opt.label_pull is not None and opt.pulling == "last-mile": #TODO
+            with torch.no_grad():
+                scores_over_labels = softmax(novel_embeds @ torch.transpose(base_embeds, 0, 1))
+                label_inspired_weights = scores_over_labels @ classifier.weight[:len(vocab_base)]
+                novel_weights_pulled = classifier.weight[len(vocab_base):,:] + opt.label_pull * (label_inspired_weights - classifier.weight[len(vocab_base):,:])
+                classifier.weight = nn.Parameter(torch.cat([base_weight, 
+                                                            novel_weights_pulled], 0))
+
+                    
+            pull_acc_base_ = eval_base(net, base_batch, criterion, vocab_all)
+            pull_test_acc, test_acc_top5, test_loss, _ = validate_fine_tune(query_xs,
+                                                                       query_ys_id,
+                                                                       net,
+                                                                       criterion,
+                                                                       opt)
+            pull_avg_score = (pull_acc_base_ + pull_test_acc.item())/2
+            pull_running_avg.append(pull_avg_score)
+
     
         print('\n{:25} {:}\n'
               '{:25} {:}\n'
@@ -828,7 +861,11 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
               '{:25} {:.4f}\n'
               '{:25} {:.4f}\n'
               '{:25} {:.4f}\n'
-              '{:25} {:.4f}'.format(
+              '{:25} {:.4f}\n'
+              '{:25} {:.4f}\n'
+              '{:25} {:.4f}\n'
+              '{:25} {:.4f}\n'
+              '{:25} {:.4f}\n'.format(
                   "Novel classes are:",
                   novel_ids,
                   "Human labels are:",
@@ -842,12 +879,25 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
                   "Average:",
                   avg_score,
                   "Running Average:",
-                  np.mean(running_avg)))
-
+                  np.mean(running_avg),
+                  "Pull Novel incremental acc:",
+                  pull_test_acc.item(),
+                  "Pull Base incremental acc:",
+                  pull_acc_base_,
+                  "Pull Average:",
+                  pull_avg_score,
+                  "Running Average:",
+                  np.mean(pull_running_avg)))
+        
+        
+         
+    if opt.track_label_inspired_weights:
+        track_inspired.to_csv(f"track_inspired_{opt.eval_mode}_label_pull{opt.label_pull}.csv", index=False)
+        
     if opt.track_weights:
 #         pth = os.path.join(opt.dumped, opt.eval_mode)
 #         os.makedirs(pth)
-        track_weights.to_csv(f"track_weights_{opt.eval_mode}.csv", index=False)
+        track_weights.to_csv(f"track_weights_{opt.eval_mode}_label_pull{opt.label_pull}.csv", index=False)
     
     if vis:
         return df
