@@ -5,10 +5,10 @@
 # #SBATCH --ntasks-per-node=1
 # #SBATCH --cpus-per-task=4
 # #SBATCH --gres=gpu:volta:1
-# #SBATCH --array=1-6
+# #SBATCH --array=1-24
 # #SBATCH --output=dumped/%A_%a.out
 # #SBATCH --error=dumped/%A_%a.err
-# #SBATCH --job-name=nolangnobias-5shot-fine
+# #SBATCH --job-name=linear-label-pull
 
 
 
@@ -18,11 +18,13 @@
 # FILE="$DUMPED_PATH/${SLURM_ARRAY_TASK_ID}_temp_hyperparameters.txt"
 # rm $FILE 
 
-# for LMBD in 0.1 0.2 0.3; do
-#     for TRLOSS in 0.5 0.6; do
+# for LMBD in 0.2 0.3; do
+#     for TRLOSS in 0.5 0.55 0.6; do
 #         for NOVELEPOCH in 20; do
-#             for LR in 0.002; do 
-#                 echo "${LMBD} ${TRLOSS} ${NOVELEPOCH} ${LR}" >> $FILE
+#             for LR in 0.002 0.001; do 
+#                 for PULL in 0.0 0.05 0.1; do
+#                     echo "${LMBD} ${TRLOSS} ${NOVELEPOCH} ${LR} ${PULL}" >> $FILE
+#                 done
 #             done
 #         done
 #     done
@@ -37,23 +39,27 @@
 # TRLOSS="${PARAMS[1]}"
 # NOVELEPOCH="${PARAMS[2]}"
 # LR="${PARAMS[3]}"
+# PULL="${PARAMS[4]}"
 
 # # Create log files
-# LOG_STDOUT="${DUMPED_PATH}/${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.out"
-# LOG_STDERR="${DUMPED_PATH}/${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.err"
-# # BACKBONE_PATH="${DUMPED_PATH}/backbones/label+desc/resnet12_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain_layer_${LAYER}_multip_${MULTIPFC}/resnet12_last.pth" # label+desc
+# LOG_STDOUT="${DUMPED_PATH}/label_pull_${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.out"
+# LOG_STDERR="${DUMPED_PATH}/label_pull_${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.err"
 
 
 # # LABEL ONLY FEW-SHOT FINETUNING
 # BACKBONE_PATH="${DUMPED_PATH}/backbones/linear/resnet12_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain_classifier_linear_8075566/resnet12_last.pth"
-
+# # export BACKBONE_PATH="${DUMPED_PATH}/backbones/linear/resnet12_miniImageNet_linear_classifier_wbias/resnet12_last.pth"
+# export DATA_PATH="/home/gridsan/groups/akyureklab/rfs-incremental/data"
 # python eval_incremental.py --model_path $BACKBONE_PATH \
-#                            --data_root data \
+#                            --data_root $DATA_PATH \
 #                            --n_shots 5 \
 #                            --eval_mode few-shot-incremental-fine-tune \
 #                            --classifier linear \
 #                            --novel_epochs $NOVELEPOCH \
 #                            --learning_rate $LR \
+#                            --use_episodes \
+#                            --word_embed_size 500 \
+#                            --label_pull $PULL \
 #                            --freeze_backbone_at 1 \
 #                            --lmbd_reg_transform_w $LMBD \
 #                            --target_train_loss $TRLOSS > $LOG_STDOUT 2> $LOG_STDERR
@@ -63,26 +69,48 @@
 # For debugging.                           
 
 
-# # No language fine tuning few-shot
-export DUMPED_PATH="/home/gridsan/akyurek/git/rfs-incremental/dumped"
-export DATA_PATH="/home/gridsan/groups/akyureklab/rfs-incremental/data"
-export BACKBONE_PATH="${DUMPED_PATH}/backbones/linear/resnet12_miniImageNet_linear_classifier_wbias/resnet12_last.pth"
-python eval_incremental.py --model_path $BACKBONE_PATH \
+# No language fine tuning few-shot
+export DUMPED_PATH="dumped"
+export DATA_PATH="data"
+# export BACKBONE_PATH="${DUMPED_PATH}/backbones/linear/resnet12_miniImageNet_linear_classifier_wbias/resnet12_last.pth"
+BACKBONE_PATH="${DUMPED_PATH}/backbones/linear/resnet12_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain_classifier_linear_8075566/resnet12_last.pth"
+# CUDA_VISIBLE_DEVICES=6 python eval_incremental.py --model_path $BACKBONE_PATH \
+#                            --data_root $DATA_PATH \
+#                            --n_shots 5 \
+#                            --classifier linear \
+#                            --eval_mode few-shot-incremental-fine-tune \
+#                            --novel_epochs 20 \
+#                            --learning_rate 0.002 \
+#                            --freeze_backbone_at 1 \
+#                            --lmbd_reg_transform_w 0.2 \
+#                            --target_train_loss 0.5 \
+#                            --use_episodes \
+#                            --neval_episodes 1 \
+#                            --track_weights
+                           
+CUDA_VISIBLE_DEVICES=6 python eval_incremental.py --model_path $BACKBONE_PATH \
                            --data_root $DATA_PATH \
                            --n_shots 5 \
                            --classifier linear \
                            --eval_mode few-shot-incremental-fine-tune \
                            --novel_epochs 20 \
                            --learning_rate 0.002 \
-                           --use_episodes \
-                           --neval_episodes 5 \
-                           --track_weights \
                            --freeze_backbone_at 1 \
-                           --lmbd_reg_transform_w 0.3 \
-                           --target_train_loss 0.6
-                           
-
-
+                           --lmbd_reg_transform_w 0.2 \
+                           --target_train_loss 0.6 \
+                           --use_episodes \
+                           --neval_episodes 300 \
+                           --label_pull 0.05 \
+                           --pulling last-mile
+#                            --word_embed_size 500 \
+#                            --track_label_inspired_weights \
+#                            --track_weights \
+#                            --word_embed_size 500 # > labelpullnon0.out                    
+# #  
+# #                            --track_weights \
+# --glove \
+# 
+#                            
 # Checklist to run an array job.
 # 1. Make sure total number of experiments matches the array param in sbatch.
 # 2. Make sure the order that params are written to file matches the reassignment.

@@ -79,6 +79,10 @@ def parse_option():
 
     parser.add_argument('--classifier', type=str,
                         choices=['linear', 'lang-linear', 'description-linear'])
+    parser.add_argument('--track_weights', action='store_true',
+                            help='Save the classifier weights to a csv file.')
+    parser.add_argument('--track_label_inspired_weights', action='store_true',
+                            help='Save the label inspired weights to a csv file.')
 
     if parser.parse_known_args()[0].eval_mode in ["zero-shot-incremental","few-shot-incremental"]:
 
@@ -108,7 +112,19 @@ def parse_option():
         parser.add_argument('--multip_fc', type=float, default=0.05)
         parser.add_argument('--attention', type=str, choices=["sum","concat","context"], default=None, help='Use of attention in lang classifier.')
         parser.add_argument('--orig_alpha', type=float, default=1.0)
-
+        
+    if parser.parse_known_args()[0].eval_mode in ["few-shot-incremental-fine-tune"]:
+        parser.add_argument('--word_embed_size', type=int, default=500,
+                            help='Word embedding classifier')
+        parser.add_argument('--word_embed_path', type=str, default="word_embeds",
+                            help='Where to store word embeds pickles for dataset.')
+        parser.add_argument('--glove', action='store_true',
+                            help='Use of Glove embeds instead of Vico.')
+        parser.add_argument('--label_pull', type=float, default=None)
+        
+        if parser.parse_known_args()[0].label_pull is not None:
+            parser.add_argument('--pulling', type=str, default="regularize",
+                            help='How should we leverage label inspired weights?')
 
     if parser.parse_known_args()[0].eval_mode in ['zero-shot-incremental']:
         parser.add_argument('--num_novel_combs', type=int, default=0.05,
@@ -127,6 +143,7 @@ def parse_option():
         parser.add_argument('--lmbd_reg_transform_w',  type=float, default=None, help='learning rate')
         parser.add_argument('--target_train_loss',  type=float, default=0.8, help='learning rate')
         parser.add_argument('--saliency',  action='store_true', help='append label to the beginning description')
+        parser.add_argument('--use_episodes', action='store_true', help='use exact XtarNet episodes.')
 
     if parser.parse_known_args()[0].classifier in ["description-linear"]:
         parser.add_argument('--description_embed_path', type=str, default="description_embeds")
@@ -172,34 +189,57 @@ def main():
     if opt.dataset == 'miniImageNet':
         train_trans, test_trans = transforms_test_options[opt.transform]
 
-        train_loader = DataLoader(ImageNet(args=opt, partition='train', transform=train_trans), #FIXME: use train
-                                  batch_size=64, shuffle=True, drop_last=True,
-                                  num_workers=opt.num_workers)
+
 
         # load base evaluation dataset
-        base_val_loader = DataLoader(ImageNet(args=opt, partition='val', transform=test_trans),
-                                     batch_size=opt.test_base_batch_size // 2,
-                                     shuffle=True,
-                                     drop_last=False,
-                                     num_workers=opt.num_workers // 2)
+        if opt.use_episodes:
+            base_test_loader = DataLoader(MetaImageNet(args=opt, partition='test',
+                                                  train_transform=train_trans,
+                                                  test_transform=test_trans,
+                                                  fix_seed=True,
+                                                  pretrain=True),
+                                     batch_size=opt.test_batch_size, shuffle=True, drop_last=False,
+                                     num_workers=opt.num_workers)
+    
+            base_val_loader = DataLoader(MetaImageNet(args=opt, partition='val',
+                                                      train_transform=train_trans,
+                                                      test_transform=test_trans,
+                                                      fix_seed=True,
+                                                      pretrain=True),
+                                         batch_size=opt.test_batch_size, shuffle=True, drop_last=False,
+                                         num_workers=opt.num_workers)
+            train_loader = base_val_loader
+            
+        else:
+            
+            train_loader = DataLoader(ImageNet(args=opt, partition='train', transform=train_trans), #FIXME: use train
+                                  batch_size=64, shuffle=True, drop_last=True,
+                                  num_workers=opt.num_workers)        
+            base_val_loader = DataLoader(ImageNet(args=opt, partition='val', transform=test_trans),
+                                         batch_size=opt.test_base_batch_size // 2,
+                                         shuffle=True,
+                                         drop_last=False,
+                                         num_workers=opt.num_workers // 2)
 
-        base_test_loader = DataLoader(ImageNet(args=opt, partition='test', transform=test_trans),
-                                      batch_size=opt.test_base_batch_size // 2,
-                                      shuffle=True,
-                                      drop_last=False,
-                                      num_workers=opt.num_workers // 2)
+            base_test_loader = DataLoader(ImageNet(args=opt, partition='test', transform=test_trans),
+                                          batch_size=opt.test_base_batch_size // 2,
+                                          shuffle=True,
+                                          drop_last=False,
+                                          num_workers=opt.num_workers // 2)
+
+        
 
         meta_testloader = DataLoader(MetaImageNet(args=opt, partition='test',
                                                   train_transform=train_trans,
                                                   test_transform=test_trans,
                                                   fix_seed=True),
-                                     batch_size=opt.test_batch_size, shuffle=True, drop_last=False,
+                                     batch_size=opt.test_batch_size, shuffle=False, drop_last=False,
                                      num_workers=opt.num_workers)
         meta_valloader = DataLoader(MetaImageNet(args=opt, partition='val',
                                                  train_transform=train_trans,
                                                  test_transform=test_trans,
                                                  fix_seed=True),
-                                    batch_size=opt.test_batch_size, shuffle=True, drop_last=False,
+                                    batch_size=opt.test_batch_size, shuffle=False, drop_last=False,
                                     num_workers=opt.num_workers)
         if opt.use_trainval:
             n_cls = 80
@@ -268,7 +308,15 @@ def main():
     
     ckpt = torch.load(opt.model_path)
     if opt.classifier =="linear":
-        opt.no_linear_bias = ckpt['opt'].no_linear_bias
+
+        try:
+            bias = ckpt['model']['classifier.bias']
+            opt.linear_bias = bias is not None
+        except:
+            print("!!!! Setting bias to true!")
+            opt.linear_bias = False 
+            
+            
     model = create_model(opt.model, n_cls, opt, vocab=vocab, dataset=opt.dataset)
     print("Loading model...")
     try:
@@ -435,6 +483,8 @@ def main():
     elif opt.eval_mode == 'few-shot-incremental-fine-tune':
         assert opt.classifier == "linear"
         criterion = nn.CrossEntropyLoss()
+        
+        
         start = time.time()
         opt.split = "val"
         novel, base = few_shot_finetune_incremental_test(model,
@@ -448,21 +498,22 @@ def main():
         print('val_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel[0], novel[1], val_time))
         print('val_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base[0], base[1], val_time))
         print('val_acc_average: {:.4f}'.format(avg_score))
+        
+        if not opt.track_weights and not opt.track_label_inspired_weights:
+            start = time.time()
+            opt.split = "test" # TODO: run only for best val.
 
-        start = time.time()
-        opt.split = "test" # TODO: run only for best val.
-
-        novel, base = few_shot_finetune_incremental_test(model,
-                                                         ckpt,
-                                                         criterion,
-                                                         meta_testloader,
-                                                         base_test_loader,
-                                                         opt)
-        test_time = time.time() - start
-        avg_score = (base[0]+novel[0])/2
-        print('test_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel[0], novel[1], test_time))
-        print('test_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base[0], base[1], test_time))
-        print('test_acc_average: {:.4f}'.format(avg_score))
+            novel, base = few_shot_finetune_incremental_test(model,
+                                                             ckpt,
+                                                             criterion,
+                                                             meta_testloader,
+                                                             base_test_loader,
+                                                             opt)
+            test_time = time.time() - start
+            avg_score = (base[0]+novel[0])/2
+            print('test_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel[0], novel[1], test_time))
+            print('test_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base[0], base[1], test_time))
+            print('test_acc_average: {:.4f}'.format(avg_score))
 
     elif opt.eval_mode == "few-shot":
         start = time.time()
