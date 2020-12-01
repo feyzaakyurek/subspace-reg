@@ -86,7 +86,7 @@ python eval_incremental.py --model_path $BACKBONE_PATH \
                            --freeze_backbone_at 1 \
                            --lmbd_reg_transform_w 0.5 \
                            --attention sum \
-                           --use_episodes \
+                           --use_episodes true\
                            --word_embed_path $WORD_EMBEDS \
                            --target_train_loss 0.7 # > $LOG_STDOUT 2> $LOG_STDERR
                            
