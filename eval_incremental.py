@@ -68,6 +68,8 @@ def parse_option():
                         help='Size of test batch)')
     parser.add_argument('--test_base_batch_size', type=int, default=50, metavar='test_batch_size',
                         help='Size of test batch)')
+    parser.add_argument('--set_seed', type=int, default=5, 
+                        help='Seed for torch and np.')
     parser.add_argument('--eval_mode', type=str,
                         choices=['few-shot', 
                                  'few-shot-incremental', 
@@ -83,6 +85,7 @@ def parse_option():
                             help='Save the classifier weights to a csv file.')
     parser.add_argument('--track_label_inspired_weights', action='store_true',
                             help='Save the label inspired weights to a csv file.')
+    parser.add_argument('--save_preds_0', action='store_true', help='Save predictions for the first episode.' ) # TODO: This may not be available for every evalmode
 
     if parser.parse_known_args()[0].eval_mode in ["zero-shot-incremental","few-shot-incremental"]:
 
@@ -140,10 +143,10 @@ def parse_option():
         parser.add_argument('--momentum', type=float, default=0.9, help='momentum')
         parser.add_argument('--adam', action='store_true', help='use adam optimizer')
         parser.add_argument('--freeze_backbone_at', type=int, default=1, help='freeze backbone while updating classifier at the epoch X, epochs start at 1.')
-        parser.add_argument('--lmbd_reg_transform_w',  type=float, default=None, help='learning rate')
+        parser.add_argument('--lmbd_reg_transform_w',  type=float, default=None, help='regularization for the base classes.')
         parser.add_argument('--target_train_loss',  type=float, default=0.8, help='learning rate')
         parser.add_argument('--saliency',  action='store_true', help='append label to the beginning description')
-        parser.add_argument('--use_episodes', action='store_true', help='use exact XtarNet episodes.')
+        parser.add_argument('--use_episodes', type=bool, default=False, help='use exact XtarNet episodes.')
 
     if parser.parse_known_args()[0].classifier in ["description-linear"]:
         parser.add_argument('--description_embed_path', type=str, default="description_embeds")
@@ -176,7 +179,9 @@ def main():
     process = subprocess.Popen(['git', 'rev-parse', '--short', 'HEAD'], shell=False, stdout=subprocess.PIPE)
     git_head_hash = process.communicate()[0].strip()
     opt.git_head_hash = git_head_hash.decode()
-
+    torch.manual_seed(opt.set_seed)
+    np.random.seed(opt.set_seed)
+    
     print("************* Training arguments *************")
 #     run.config.update(opt)
     args = opt
@@ -498,6 +503,16 @@ def main():
         print('val_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel[0], novel[1], val_time))
         print('val_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base[0], base[1], val_time))
         print('val_acc_average: {:.4f}'.format(avg_score))
+        
+        if opt.save_preds_0:
+            df = few_shot_finetune_incremental_test(model,
+                                                    ckpt,
+                                                    criterion,
+                                                    meta_valloader,
+                                                    base_val_loader,
+                                                    opt,
+                                                    vis=True)
+            df.to_csv("fine_tune_vis.csv", index=False)
         
         if not opt.track_weights and not opt.track_label_inspired_weights:
             start = time.time()
