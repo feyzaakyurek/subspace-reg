@@ -110,6 +110,7 @@ def parse_option():
         parser.add_argument('--diag_reg', type=float, default=0.05)
         parser.add_argument('--attention', type=str, choices=["sum","concat","context"], default=None, help='Use of attention in lang classifier.')
         parser.add_argument('--orig_alpha', type=float, default=1.0)
+        parser.add_argument('--transform_query_size', type=int, default=None, help='Output size of key, query, value in attention.')
 
 
     if parser.parse_known_args()[0].eval_mode in ['zero-shot-incremental']:

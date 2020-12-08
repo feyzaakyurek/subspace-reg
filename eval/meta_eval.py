@@ -257,7 +257,8 @@ def few_shot_language_incremental_test(net, ckpt, criterion, meta_valloader, bas
                                                     bias=opt.lang_classifier_bias,
                                                     verbose=False,
                                                     multip_fc=multip_fc,
-                                                    attention=attention) # TODO!!
+                                                    attention=attention,
+                                                    transform_query_size=opt.transform_query_size) # TODO!!
 
         else: # Description linear classifier
 
@@ -274,7 +275,8 @@ def few_shot_language_incremental_test(net, ckpt, criterion, meta_valloader, bas
                                                     description=True,
                                                     verbose=False,
                                                     multip_fc=multip_fc,
-                                                    attention=attention)
+                                                    attention=attention,
+                                                    transform_query_size=opt.transform_query_size)
 
         novel_embeds = dummy_classifier.embed.detach().cuda()
 
@@ -395,8 +397,15 @@ def fine_tune_novel(epoch, support_xs, support_ys_id, net, criterion, optimizer,
     support_ys_id = support_ys_id.cuda()
 
     # Compute output
-    output = net(support_xs)
-    loss = criterion(output, support_ys_id)
+    if opt.attention is not None:
+        output, alphas = net(support_xs, get_alphas=True)
+        loss = criterion(output, support_ys_id) + opt.diag_reg * criterion(alphas, support_ys_id)
+    else:
+        output = net(support_xs)
+        loss = criterion(output, support_xs)
+
+    # output = net(support_xs)
+    # loss = criterion(output, support_ys_id)
 #     if opt.lmbd_reg_transform_w is not None:
 #         loss = loss + opt.lmbd_reg_transform_w * torch.norm(net.classifier.transform_W - orig_transform_W)
 
