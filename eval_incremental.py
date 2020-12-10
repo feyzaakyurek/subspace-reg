@@ -71,12 +71,12 @@ def parse_option():
     parser.add_argument('--set_seed', type=int, default=5, 
                         help='Seed for torch and np.')
     parser.add_argument('--eval_mode', type=str,
-                        choices=['few-shot', 
-                                 'few-shot-incremental', 
-                                 'zero-shot', 
+                        choices=['few-shot',
+                                 'few-shot-incremental',
+                                 'zero-shot',
                                  'few-shot-incremental-fine-tune',
-                                 'zero-shot-incremental', 
-                                 'few-shot-language-incremental', 
+                                 'zero-shot-incremental',
+                                 'few-shot-language-incremental',
                                  "few-shot-incremental-language-pretrain-linear-tune"])
 
     parser.add_argument('--classifier', type=str,
@@ -110,11 +110,15 @@ def parse_option():
                             help='Word embedding classifier')
         parser.add_argument('--word_embed_path', type=str, default="word_embeds",
                             help='Where to store word embeds pickles for dataset.')
+        parser.add_argument('--word_embed_type', type=str, default="")
         parser.add_argument('--lang_classifier_bias', action='store_true',
                             help='Use of bias in lang classifier.')
         parser.add_argument('--multip_fc', type=float, default=0.05)
+        parser.add_argument('--diag_reg', type=float, default=0.05)
         parser.add_argument('--attention', type=str, choices=["sum","concat","context"], default=None, help='Use of attention in lang classifier.')
         parser.add_argument('--orig_alpha', type=float, default=1.0)
+        parser.add_argument('--transform_query_size', type=int, default=None, help='Output size of key, query, value in attention.')
+
         
     if parser.parse_known_args()[0].eval_mode in ["few-shot-incremental-fine-tune"]:
         parser.add_argument('--word_embed_size', type=int, default=500,
@@ -133,7 +137,7 @@ def parse_option():
         parser.add_argument('--num_novel_combs', type=int, default=0.05,
                             help='Number of combinations of novel/test classes to evaluate base samples against:)')
 
-    if parser.parse_known_args()[0].eval_mode in ["few-shot-language-incremental", 
+    if parser.parse_known_args()[0].eval_mode in ["few-shot-language-incremental",
                                                   "few-shot-incremental-fine-tune",
                                                   "few_shot_language_pretrain_linear_tune",
                                                   "few-shot-incremental-language-pretrain-linear-tune"]:
@@ -205,7 +209,7 @@ def main():
                                                   pretrain=True),
                                      batch_size=opt.test_batch_size, shuffle=True, drop_last=False,
                                      num_workers=opt.num_workers)
-    
+
             base_val_loader = DataLoader(MetaImageNet(args=opt, partition='val',
                                                       train_transform=train_trans,
                                                       test_transform=test_trans,
@@ -216,10 +220,10 @@ def main():
             train_loader = base_val_loader
             
         else:
-            
+
             train_loader = DataLoader(ImageNet(args=opt, partition='train', transform=train_trans), #FIXME: use train
                                   batch_size=64, shuffle=True, drop_last=True,
-                                  num_workers=opt.num_workers)        
+                                  num_workers=opt.num_workers)
             base_val_loader = DataLoader(ImageNet(args=opt, partition='val', transform=test_trans),
                                          batch_size=opt.test_base_batch_size // 2,
                                          shuffle=True,
@@ -232,7 +236,7 @@ def main():
                                           drop_last=False,
                                           num_workers=opt.num_workers // 2)
 
-        
+
 
         meta_testloader = DataLoader(MetaImageNet(args=opt, partition='test',
                                                   train_transform=train_trans,
@@ -310,8 +314,13 @@ def main():
     else:
         vocab = None
 
-    
+
     ckpt = torch.load(opt.model_path)
+    
+
+#         opt.no_linear_bias = ckpt['opt'].no_linear_bias
+    opt.multip_fc = ckpt['opt'].multip_fc
+    opt.diag_reg = ckpt['opt'].diag_reg
     if opt.classifier =="linear":
 
         try:
@@ -320,8 +329,7 @@ def main():
         except:
             print("!!!! Setting bias to true!")
             opt.linear_bias = False 
-            
-            
+
     model = create_model(opt.model, n_cls, opt, vocab=vocab, dataset=opt.dataset)
     print("Loading model...")
     try:
@@ -329,7 +337,7 @@ def main():
     except Exception as e:
         print(e)
         model.load_state_dict(ckpt['model'], strict=False)
-        
+
     if torch.cuda.is_available():
         model = model.cuda()
         cudnn.benchmark = True
