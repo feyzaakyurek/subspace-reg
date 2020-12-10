@@ -5,35 +5,20 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=10
 #SBATCH --gres=gpu:volta:1
-#SBATCH --array=1-2
+#SBATCH --array=1-2 XXX
 #SBATCH --output=dumped/%A_%a.out
 #SBATCH --error=dumped/%A_%a.err
-#SBATCH --job-name=lil-backbone-context
+#SBATCH --job-name=backbone-concat-smallkey
 
 
 
 # Create the combinations of params for each array task,
 # and save them to a temp params file.
-export DUMPED_PATH="/home/gridsan/akyurek/akyureklab_shared/rfs-incremental/dumped/backbones/"
-export DATA_PATH="/home/gridsan/akyurek/akyureklab_shared/rfs-incremental/data"
-export WORD_EMBEDS="/home/gridsan/akyurek/akyureklab_shared/rfs-incremental/word_embeds"
+DUMPED_PATH="/home/gridsan/akyurek/git/rfs-incremental/dumped/backbones/"
+DATA_PATH="/home/gridsan/groups/akyureklab/rfs-incremental/data"
+EXP_FOLDER=${DUMPED_PATH}/"attention_concat_smallkey"
 
-FILE="$DUMPED_PATH/${SLURM_ARRAY_TASK_ID}_temp_hyperparameters.txt"
-rm $FILE 
-
-
-for MULTIPFC in 0.05 0.1; do
-    echo "${MULTIPFC}" >> $FILE
-done
-
-
-
-# Read the SLURM_ARRAY_TASK_ID line from the params file.
-LINE=$(sed "${SLURM_ARRAY_TASK_ID}q;d" $FILE) 
-read -ra PARAMS<<< "$LINE"
-
-MULTIPFC="${PARAMS[0]}"
-
+for 
 
 # Create log files
 export LOG_STDOUT="${DUMPED_PATH}/${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.out"

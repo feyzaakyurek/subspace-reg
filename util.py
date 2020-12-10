@@ -2,13 +2,13 @@ import torch
 import torch.nn as nn
 import numpy as np
 import pickle
-# from torchnlp.word_to_vector import Vico
+from torchnlp.word_to_vector import Vico
 import ipdb
 import os
 import argparse
 from transformers import AutoTokenizer, AutoModelForMaskedLM
 from nltk.corpus import wordnet
-
+from PyDictionary import PyDictionary
 
 class LabelSmoothing(nn.Module):
     """
@@ -114,7 +114,7 @@ def create_and_save_embeds(opt, vocab):
                                     is_include=lambda w: w in set(words))
         
         embeds = []
-        keys = words = pretrained_embedding.token_to_index.keys()
+        keys = pretrained_embedding.token_to_index.keys()
         for w in keys: 
             embeds.append(pretrained_embedding[w].numpy())
         d = dict(zip(keys, embeds))
@@ -125,7 +125,65 @@ def create_and_save_embeds(opt, vocab):
             pickle.dump(d, f)
         print("Pickled.")
         
+    
+        
+                
+                
+def create_and_save_synonyms(opt, vocab_train, vocab_test, vocab_val):
+    # For now save only the base.
+    word_embeds = opt.word_embed_path
+    dim = opt.word_embed_size
+    embed_pth = "{0}_dim{1}_base_synonyms.pickle".format(opt.dataset, dim)
+    embed_pth = os.path.join(word_embeds, embed_pth)
+    
+    if os.path.exists(embed_pth):
+        print("Found {}.".format(embed_pth))
+        return
+    else:
+        print("Loading dictionary for synonyms...")
+        dictionary=PyDictionary([v.replace(" ", "_") for v in vocab_train])
+        
+        # For every v in vocab find synonyms and save to a dict
+        synonyms = {}
+        all_words = []
+        for v in vocab_train:
+            synonyms[v] = [v] + dictionary.synonym(v.replace(" ", "_")) #wordnet.synsets()
+            for syn in synonyms[v]:
+                all_words.extend(syn.split(' '))
+                
+        pretrained_embedding = Vico(name='linear',
+                                    dim=dim,
+                                    is_include=lambda w: w in set(all_words))
+        
+        dim = 300 if opt.glove else 500
+        label_syn_embeds = {}
+        for v in vocab_train:
+            label_embed = np.zeros(dim)
+            non_zero_syns = 0
+            for syn in synonyms[v]:
+                words = syn.split(' ')
+                embed = np.zeros(dim) #TODO
+                non_zero_words_in_syn = 0
+                for w in words:
+                    vec = pretrained_embedding[w].numpy()
+                    if not np.equal(vec,np.zeros(dim)).all():
+                        embed += vec
+                        non_zero_words_in_syn += 1
+                embed /= max(non_zero_words_in_syn,1)
+                if not np.equal(embed,np.zeros(dim)).all() :
+                    label_embed += embed
+                    non_zero_syns += 1
+            label_embed /= max(non_zero_syns,1) #len(synonyms[v])
+            label_syn_embeds[v] = label_embed
+          
+        # Pickle the dictionary for later load
+        print("Pickling label embeddings averaged over all synonyms including the label itself ...")
+        with open(embed_pth, 'wb') as f:
+            pickle.dump(label_syn_embeds, f)
+        exit(0)
+                    
 
+    
 def create_and_save_descriptions(opt, vocab):
     
     if not os.path.isdir(opt.description_embed_path):
