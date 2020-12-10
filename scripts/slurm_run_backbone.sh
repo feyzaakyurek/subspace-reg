@@ -5,16 +5,24 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=10
 #SBATCH --gres=gpu:volta:1
-#SBATCH --array=1-16
-#SBATCH --output=%A_%a.out
-#SBATCH --error=s%A_%a.err
+#SBATCH --array=1-2 XXX
+#SBATCH --output=dumped/%A_%a.out
+#SBATCH --error=dumped/%A_%a.err
 #SBATCH --job-name=attreg_back_query_sizes
+
+
 
 # Create the combinations of params for each array task,
 # and save them to a temp params file.
-DUMPED_PATH="/home/gridsan/eakyurek/gitother/rfs-incremental/dumped/backbones/c-x-concat/size_experiments"
-DATA_PATH="/home/gridsan/eakyurek/akyureklab_shared/rfs-incremental/data"
-WORD_EMBEDS="/home/gridsan/eakyurek/akyureklab_shared/rfs-incremental/word_embeds"
+# DUMPED_PATH="/home/gridsan/akyurek/git/rfs-incremental/dumped/backbones/"
+# DATA_PATH="/home/gridsan/groups/akyureklab/rfs-incremental/data"
+# EXP_FOLDER=${DUMPED_PATH}/"attention_concat_smallkey"
+
+# Create the combinations of params for each array task,
+# and save them to a temp params file.
+# DUMPED_PATH="/home/gridsan/eakyurek/gitother/rfs-incremental/dumped/backbones/c-x-concat/size_experiments"
+# DATA_PATH="/home/gridsan/eakyurek/akyureklab_shared/rfs-incremental/data"
+# WORD_EMBEDS="/home/gridsan/eakyurek/akyureklab_shared/rfs-incremental/word_embeds"
 
 
 cnt=0
@@ -38,7 +46,7 @@ if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then
                                   --transform_query_size $QUERY_SIZE \
                                   --diag_reg $DIAG_REG \
                                   --word_embed_path $WORD_EMBEDS &> $LOG_STDOUT
-#     break
+
 fi
 done
 done
@@ -55,8 +63,6 @@ done
 # MULTIPFC="${PARAMS[0]}"
 # DIAG_REG="${PARAMS[1]}"
 #
-
-
 
 # Debugging
 # # Concat with Reg.

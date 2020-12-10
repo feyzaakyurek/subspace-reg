@@ -29,7 +29,7 @@ from dataset.transform_cfg import transforms_test_options, transforms_list
 from eval.meta_eval import meta_test, incremental_test, zero_shot_test, zero_shot_incremental_test, \
 few_shot_language_incremental_test, few_shot_finetune_incremental_test, few_shot_language_pretrain_linear_tune
 from eval.cls_eval import incremental_validate
-from util import create_and_save_embeds, restricted_float, create_and_save_descriptions
+from util import create_and_save_embeds, restricted_float, create_and_save_descriptions, create_and_save_synonyms
 
 
 # import wandb
@@ -71,12 +71,12 @@ def parse_option():
     parser.add_argument('--set_seed', type=int, default=5, 
                         help='Seed for torch and np.')
     parser.add_argument('--eval_mode', type=str,
-                        choices=['few-shot',
-                                 'few-shot-incremental',
-                                 'zero-shot',
-                                 'few-shot-incremental-fine-tune',
-                                 'zero-shot-incremental',
-                                 'few-shot-language-incremental',
+                        choices=["few-shot", 
+                                 "few-shot-incremental", 
+                                 "zero-shot", 
+                                 "few-shot-incremental-fine-tune",
+                                 "zero-shot-incremental", 
+                                 "few-shot-language-incremental", 
                                  "few-shot-incremental-language-pretrain-linear-tune"])
 
     parser.add_argument('--classifier', type=str,
@@ -86,6 +86,7 @@ def parse_option():
     parser.add_argument('--track_label_inspired_weights', action='store_true',
                             help='Save the label inspired weights to a csv file.')
     parser.add_argument('--save_preds_0', action='store_true', help='Save predictions for the first episode.' ) # TODO: This may not be available for every evalmode
+    parser.add_argument('--use_synonyms', action='store_true', help='Use synonyms.') # TODO
 
     if parser.parse_known_args()[0].eval_mode in ["zero-shot-incremental","few-shot-incremental"]:
 
@@ -183,6 +184,8 @@ def main():
     process = subprocess.Popen(['git', 'rev-parse', '--short', 'HEAD'], shell=False, stdout=subprocess.PIPE)
     git_head_hash = process.communicate()[0].strip()
     opt.git_head_hash = git_head_hash.decode()
+    
+    # Set seeds
     torch.manual_seed(opt.set_seed)
     np.random.seed(opt.set_seed)
     
@@ -299,7 +302,7 @@ def main():
         raise NotImplementedError(opt.dataset)
 
 
-    # load model
+    # If language classifiers are used, then we'll need the embeds recorded.
     if opt.classifier in ["lang-linear", "description-linear"]:
         # Save full dataset vocab if not available
         vocab_train = [name for name in train_loader.dataset.label2human if name != '']
@@ -313,7 +316,20 @@ def main():
         vocab = vocab_train
     else:
         vocab = None
-
+        
+    # This is another scenario in which we'll need the embeds.    
+    if opt.label_pull is not None:
+#         ipdb.set_trace()
+        vocab_train = [name for name in train_loader.dataset.label2human if name != '']
+        vocab_test = [name for name in meta_testloader.dataset.label2human if name != '']
+        vocab_val = [name for name in meta_valloader.dataset.label2human if name != '']
+        vocab_all = vocab_train + vocab_test + vocab_val
+        create_and_save_embeds(opt, vocab_all)
+        
+        if opt.use_synonyms:
+            create_and_save_synonyms(opt, vocab_train, vocab_test, vocab_val)
+    
+    # Load model if available, check bias. 
 
     ckpt = torch.load(opt.model_path)
     
@@ -322,7 +338,6 @@ def main():
     opt.multip_fc = ckpt['opt'].multip_fc
     opt.diag_reg = ckpt['opt'].diag_reg
     if opt.classifier =="linear":
-
         try:
             bias = ckpt['model']['classifier.bias']
             opt.linear_bias = bias is not None
@@ -520,7 +535,7 @@ def main():
                                                     base_val_loader,
                                                     opt,
                                                     vis=True)
-            df.to_csv("fine_tune_vis.csv", index=False)
+            df.to_csv(f"vis_{opt.eval_mode}_pulling_{opt.pulling}_{opt.label_pull}_target_loss_{opt.target_train_loss}_synonyms_{opt.use_synonyms}.csv", index=False)
         
         if not opt.track_weights and not opt.track_label_inspired_weights:
             start = time.time()

@@ -623,7 +623,6 @@ def incremental_test(net, testloader, val_loader, alpha, use_logit=False, is_nor
         else:
             return mean_confidence_interval(acc_novel), mean_confidence_interval(acc_base)
 
-
 def meta_test(net, testloader, use_logit=True, is_norm=True, classifier='LR'):
     net = net.eval()
     acc = []
@@ -665,7 +664,6 @@ def meta_test(net, testloader, use_logit=True, is_norm=True, classifier='LR'):
             acc.append(metrics.accuracy_score(query_ys, query_ys_pred))
 
     return mean_confidence_interval(acc)
-
 
 def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, base_val_loader, opt,  vis=False):
     if vis:
@@ -726,28 +724,58 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
             
         if opt.label_pull is not None:
             dim = opt.word_embed_size # TODO 
-            embed_pth = os.path.join(opt.word_embed_path, "{0}_dim{1}.pickle".format(opt.dataset, dim)) # TOdo
-#             file = os.path.join("word_embeds","miniImageNet_dim500.pickle")
-            with (open(embed_pth, "rb")) as openfile:
+            
+            # Retrieve novel embeds
+            embed_pth = os.path.join(opt.word_embed_path, "{0}_dim{1}.pickle".format(opt.dataset, dim)) # TODO
+            with open(embed_pth, "rb") as openfile:
                 embeds = pickle.load(openfile)
-            embed_tensor = [0] * len(vocab_all)
-            for (i,token) in enumerate(vocab_base + vocab_novel):
+                
+            novel_embeds = [0] * len(vocab_novel)
+            for (i,token) in enumerate(vocab_novel):
                 words = token.split(' ')
                 for w in words:
                     try:
-                        embed_tensor[i] += embeds[w]
+                        novel_embeds[i] += embeds[w]
                     except KeyError:
-                        embed_tensor[i] = np.zeros(dim)
-                embed_tensor[i] /= len(words)
+                        novel_embeds[i] = np.zeros(dim)
+                novel_embeds[i] /= len(words)
+            novel_embeds = torch.cuda.FloatTensor(np.stack(novel_embeds, axis=0))
+            
+            # Retrieve base embeds
+            if opt.use_synonyms:
+                embed_pth = os.path.join(opt.word_embed_path, "{0}_dim{1}_base_synonyms.pickle".format(opt.dataset, dim)) # TOdo
+                with open(embed_pth, "rb") as openfile:
+                    label_syn_embeds = pickle.load(openfile)
+                base_embeds = []
+                for base_label in vocab_base:
+                    base_embeds.append(label_syn_embeds[base_label])
+                base_embeds = torch.cuda.FloatTensor(np.stack(base_embeds, axis=0))
+                
+            else:
+                embed_pth = os.path.join(opt.word_embed_path, "{0}_dim{1}.pickle".format(opt.dataset, dim)) # TODO
+                with open(embed_pth, "rb") as openfile:
+                    embeds = pickle.load(openfile)
+                base_embeds = [0] * len(vocab_base)
+                for (i,token) in enumerate(vocab_base):
+                    words = token.split(' ')
+                    for w in words:
+                        try:
+                            base_embeds[i] += embeds[w]
+                        except KeyError:
+                            base_embeds[i] = np.zeros(dim)
+                    base_embeds[i] /= len(words)     
+                base_embeds = torch.cuda.FloatTensor(np.stack(base_embeds, axis=0))
 
-            X = np.stack(embed_tensor, axis=0)
-            if opt.glove: #todo
-                X = X[:,:300]
+            # This will be used to compute label attractors.
             softmax = nn.Softmax(dim=1)
-            base_embeds = torch.cuda.FloatTensor(X[:len(vocab_base),:]) 
-            novel_embeds = torch.cuda.FloatTensor(X[len(vocab_base):,:])
-
-
+            
+            # If Glove, use the first 300 TODO
+            if opt.glove: #todo
+                base_embeds = base_embeds[:,:300]
+                novel_embeds = novel_embeds[:,:300]
+            
+            
+            
         # Validate before training.
         test_acc, test_acc_top5, test_loss, _ = validate_fine_tune(query_xs, query_ys_id, net, criterion, opt)
         print('{:25} {:.4f}\n'.format("Novel incremental acc before fine-tune:",test_acc.item()))
@@ -897,10 +925,10 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
         
          
     if opt.track_label_inspired_weights:
-        track_inspired.to_csv(f"track_inspired_{opt.eval_mode}_pulling_{opt.pulling}_{opt.label_pull}_target_loss_{opt.target_train_loss}.csv", index=False)
+        track_inspired.to_csv(f"track_inspired_{opt.eval_mode}_pulling_{opt.pulling}_{opt.label_pull}_target_loss_{opt.target_train_loss}_synonyms_{opt.use_synonyms}.csv", index=False)
         
     if opt.track_weights:
-        track_weights.to_csv(f"track_weights_{opt.eval_mode}_pulling_{opt.pulling}_{opt.label_pull}_target_loss_{opt.target_train_loss}.csv", index=False)
+        track_weights.to_csv(f"track_weights_{opt.eval_mode}_pulling_{opt.pulling}_{opt.label_pull}_target_loss_{opt.target_train_loss}_synonyms_{opt.use_synonyms}.csv", index=False)
     
     if vis:
         return df
