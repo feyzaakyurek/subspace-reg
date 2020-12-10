@@ -303,7 +303,7 @@ class ResNet(nn.Module):
         if self.num_classes > 0:
             #self.classifier = nn.Linear(640, self.num_classes)
             if vocab is None:
-                self.classifier = nn.Linear(640, self.num_classes, bias=opt.no_linear_bias)
+                self.classifier = nn.Linear(640, self.num_classes, bias=opt.linear_bias)
             else:
                 if opt.classifier == "lang-linear":
                     embed_pth = os.path.join(opt.word_embed_path,

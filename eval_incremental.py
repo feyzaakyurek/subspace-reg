@@ -68,6 +68,8 @@ def parse_option():
                         help='Size of test batch)')
     parser.add_argument('--test_base_batch_size', type=int, default=50, metavar='test_batch_size',
                         help='Size of test batch)')
+    parser.add_argument('--set_seed', type=int, default=5, 
+                        help='Seed for torch and np.')
     parser.add_argument('--eval_mode', type=str,
                         choices=['few-shot',
                                  'few-shot-incremental',
@@ -79,6 +81,11 @@ def parse_option():
 
     parser.add_argument('--classifier', type=str,
                         choices=['linear', 'lang-linear', 'description-linear'])
+    parser.add_argument('--track_weights', action='store_true',
+                            help='Save the classifier weights to a csv file.')
+    parser.add_argument('--track_label_inspired_weights', action='store_true',
+                            help='Save the label inspired weights to a csv file.')
+    parser.add_argument('--save_preds_0', action='store_true', help='Save predictions for the first episode.' ) # TODO: This may not be available for every evalmode
 
     if parser.parse_known_args()[0].eval_mode in ["zero-shot-incremental","few-shot-incremental"]:
 
@@ -112,6 +119,19 @@ def parse_option():
         parser.add_argument('--orig_alpha', type=float, default=1.0)
         parser.add_argument('--transform_query_size', type=int, default=None, help='Output size of key, query, value in attention.')
 
+        
+    if parser.parse_known_args()[0].eval_mode in ["few-shot-incremental-fine-tune"]:
+        parser.add_argument('--word_embed_size', type=int, default=500,
+                            help='Word embedding classifier')
+        parser.add_argument('--word_embed_path', type=str, default="word_embeds",
+                            help='Where to store word embeds pickles for dataset.')
+        parser.add_argument('--glove', action='store_true',
+                            help='Use of Glove embeds instead of Vico.')
+        parser.add_argument('--label_pull', type=float, default=None)
+        
+        if parser.parse_known_args()[0].label_pull is not None:
+            parser.add_argument('--pulling', type=str, default="regularize",
+                            help='How should we leverage label inspired weights?')
 
     if parser.parse_known_args()[0].eval_mode in ['zero-shot-incremental']:
         parser.add_argument('--num_novel_combs', type=int, default=0.05,
@@ -127,10 +147,10 @@ def parse_option():
         parser.add_argument('--momentum', type=float, default=0.9, help='momentum')
         parser.add_argument('--adam', action='store_true', help='use adam optimizer')
         parser.add_argument('--freeze_backbone_at', type=int, default=1, help='freeze backbone while updating classifier at the epoch X, epochs start at 1.')
-        parser.add_argument('--lmbd_reg_transform_w',  type=float, default=None, help='learning rate')
+        parser.add_argument('--lmbd_reg_transform_w',  type=float, default=None, help='regularization for the base classes.')
         parser.add_argument('--target_train_loss',  type=float, default=0.8, help='learning rate')
         parser.add_argument('--saliency',  action='store_true', help='append label to the beginning description')
-        parser.add_argument('--use_episodes', action='store_true', help='use exact XtarNet episodes.')
+        parser.add_argument('--use_episodes', type=bool, default=False, help='use exact XtarNet episodes.')
 
     if parser.parse_known_args()[0].classifier in ["description-linear"]:
         parser.add_argument('--description_embed_path', type=str, default="description_embeds")
@@ -163,7 +183,9 @@ def main():
     process = subprocess.Popen(['git', 'rev-parse', '--short', 'HEAD'], shell=False, stdout=subprocess.PIPE)
     git_head_hash = process.communicate()[0].strip()
     opt.git_head_hash = git_head_hash.decode()
-
+    torch.manual_seed(opt.set_seed)
+    np.random.seed(opt.set_seed)
+    
     print("************* Training arguments *************")
 #     run.config.update(opt)
     args = opt
@@ -196,6 +218,7 @@ def main():
                                          batch_size=opt.test_batch_size, shuffle=True, drop_last=False,
                                          num_workers=opt.num_workers)
             train_loader = base_val_loader
+            
         else:
 
             train_loader = DataLoader(ImageNet(args=opt, partition='train', transform=train_trans), #FIXME: use train
@@ -219,13 +242,13 @@ def main():
                                                   train_transform=train_trans,
                                                   test_transform=test_trans,
                                                   fix_seed=True),
-                                     batch_size=opt.test_batch_size, shuffle=True, drop_last=False,
+                                     batch_size=opt.test_batch_size, shuffle=False, drop_last=False,
                                      num_workers=opt.num_workers)
         meta_valloader = DataLoader(MetaImageNet(args=opt, partition='val',
                                                  train_transform=train_trans,
                                                  test_transform=test_trans,
                                                  fix_seed=True),
-                                    batch_size=opt.test_batch_size, shuffle=True, drop_last=False,
+                                    batch_size=opt.test_batch_size, shuffle=False, drop_last=False,
                                     num_workers=opt.num_workers)
         if opt.use_trainval:
             n_cls = 80
@@ -293,10 +316,20 @@ def main():
 
 
     ckpt = torch.load(opt.model_path)
-    if opt.classifier =="linear":
-        opt.no_linear_bias = ckpt['opt'].no_linear_bias
+    
+
+#         opt.no_linear_bias = ckpt['opt'].no_linear_bias
     opt.multip_fc = ckpt['opt'].multip_fc
     opt.diag_reg = ckpt['opt'].diag_reg
+    if opt.classifier =="linear":
+
+        try:
+            bias = ckpt['model']['classifier.bias']
+            opt.linear_bias = bias is not None
+        except:
+            print("!!!! Setting bias to true!")
+            opt.linear_bias = False 
+
     model = create_model(opt.model, n_cls, opt, vocab=vocab, dataset=opt.dataset)
     print("Loading model...")
     try:
@@ -463,6 +496,8 @@ def main():
     elif opt.eval_mode == 'few-shot-incremental-fine-tune':
         assert opt.classifier == "linear"
         criterion = nn.CrossEntropyLoss()
+        
+        
         start = time.time()
         opt.split = "val"
         novel, base = few_shot_finetune_incremental_test(model,
@@ -476,21 +511,32 @@ def main():
         print('val_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel[0], novel[1], val_time))
         print('val_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base[0], base[1], val_time))
         print('val_acc_average: {:.4f}'.format(avg_score))
+        
+        if opt.save_preds_0:
+            df = few_shot_finetune_incremental_test(model,
+                                                    ckpt,
+                                                    criterion,
+                                                    meta_valloader,
+                                                    base_val_loader,
+                                                    opt,
+                                                    vis=True)
+            df.to_csv("fine_tune_vis.csv", index=False)
+        
+        if not opt.track_weights and not opt.track_label_inspired_weights:
+            start = time.time()
+            opt.split = "test" # TODO: run only for best val.
 
-        start = time.time()
-        opt.split = "test" # TODO: run only for best val.
-
-        novel, base = few_shot_finetune_incremental_test(model,
-                                                         ckpt,
-                                                         criterion,
-                                                         meta_testloader,
-                                                         base_test_loader,
-                                                         opt)
-        test_time = time.time() - start
-        avg_score = (base[0]+novel[0])/2
-        print('test_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel[0], novel[1], test_time))
-        print('test_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base[0], base[1], test_time))
-        print('test_acc_average: {:.4f}'.format(avg_score))
+            novel, base = few_shot_finetune_incremental_test(model,
+                                                             ckpt,
+                                                             criterion,
+                                                             meta_testloader,
+                                                             base_test_loader,
+                                                             opt)
+            test_time = time.time() - start
+            avg_score = (base[0]+novel[0])/2
+            print('test_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel[0], novel[1], test_time))
+            print('test_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base[0], base[1], test_time))
+            print('test_acc_average: {:.4f}'.format(avg_score))
 
     elif opt.eval_mode == "few-shot":
         start = time.time()

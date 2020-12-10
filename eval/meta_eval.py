@@ -8,6 +8,7 @@ import ipdb
 import os
 import time
 import copy
+import pickle
 
 import torch
 import torch.nn as nn
@@ -78,7 +79,7 @@ def Cosine(support, support_ys, query):
 
 
 def get_vocabs(base_loader=None, novel_loader=None, query_ys=None):
-    vocab_all = []
+    vocab_all = [] 
     vocab_base = None
     if base_loader is not None:
         label2human_base = base_loader.dataset.label2human
@@ -179,7 +180,6 @@ def zero_shot_incremental_test(net, meta_valloader, base_val_loader, opt, alpha,
     if vis:
         return df
     return mean_confidence_interval(acc_novel), mean_confidence_interval(acc_base)
-
 
 def drop_a_dim(data): #TODO why do we need this in the first place?
     support_xs, support_ys, query_xs, query_ys = data
@@ -387,12 +387,9 @@ def few_shot_language_incremental_test(net, ckpt, criterion, meta_valloader, bas
     else:
         return mean_confidence_interval(acc_novel), mean_confidence_interval(acc_base)
 
-
-
-
-def fine_tune_novel(epoch, support_xs, support_ys_id, net, criterion, optimizer, orig_classifier_weights, opt, orig_classifier_bias=None):
+def fine_tune_novel(epoch, support_xs, support_ys_id, net, criterion, optimizer, orig_classifier_weights, opt, label_inspired_weights=None, orig_classifier_bias=None):
     """One epoch training, single batch training."""
-#     ipdb.set_trace()
+
     support_xs = support_xs.float().cuda()
     support_ys_id = support_ys_id.cuda()
 
@@ -413,7 +410,10 @@ def fine_tune_novel(epoch, support_xs, support_ys_id, net, criterion, optimizer,
         len_vocab,_ = orig_classifier_weights.size()
         loss += opt.lmbd_reg_transform_w * torch.norm(net.classifier.weight[:len_vocab,:] - orig_classifier_weights)
         if orig_classifier_bias is not None:
-            loss += opt.lmbd_reg_transform_w * torch.norm(net.classifier.bias[:len_vocab] - orig_classifier_bias)
+            loss += opt.lmbd_reg_transform_w * torch.norm(net.classifier.bias[:len_vocab] - orig_classifier_bias)**2
+            
+    if label_inspired_weights is not None and opt.pulling == "regularize":
+        loss += opt.label_pull * torch.norm(net.classifier.weight[len_vocab:,:] - label_inspired_weights)**2
 
     # Train
     optimizer.zero_grad()
@@ -470,7 +470,7 @@ def eval_base(net, base_batch, criterion, vocab_all, df=None):
         acc_base_.append(acc1[0].item())
         ys_pred = torch.argmax(output, dim=1).numpy()
         if df is not None:
-            base_info = [(idx, vocab_all[target[i]], True, vocab_all[ys_pred[i]],
+            base_info = [(0, vocab_all[target[i]], True, vocab_all[ys_pred[i]],
                           image_formatter(imgdata[i,:,:,:]))  for i in range(len(target))]
             df = df.append(pd.DataFrame(base_info, columns=df.columns), ignore_index=True)
     return np.mean(acc_base_)
@@ -548,8 +548,6 @@ def zero_shot_test(net, loader, opt, is_norm=True, use_logit=False, novel_only=T
         else:
             return mean_confidence_interval(acc_novel)
 
-
-
 def incremental_test(net, testloader, val_loader, alpha, use_logit=False, is_norm=True, classifier='LR', vis=False):
     acc_novel = []
     acc_base = []
@@ -626,7 +624,6 @@ def incremental_test(net, testloader, val_loader, alpha, use_logit=False, is_nor
             return mean_confidence_interval(acc_novel), mean_confidence_interval(acc_base)
 
 
-
 def meta_test(net, testloader, use_logit=True, is_norm=True, classifier='LR'):
     net = net.eval()
     acc = []
@@ -670,7 +667,6 @@ def meta_test(net, testloader, use_logit=True, is_norm=True, classifier='LR'):
     return mean_confidence_interval(acc)
 
 
-
 def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, base_val_loader, opt,  vis=False):
     if vis:
         df = pd.DataFrame(columns=['idx', 'class', 'isbase', 'predicted', 'img'])
@@ -678,9 +674,8 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
     acc_novel = []
     acc_base = []
     running_avg = []
-
+    pull_running_avg = []
     basenet = copy.deepcopy(net).cuda()
-
     base_weight = basenet.classifier.weight.clone().detach().requires_grad_(False)
     if basenet.classifier.bias is not None:
         base_bias   = basenet.classifier.bias.clone().detach().requires_grad_(False)
@@ -690,14 +685,22 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
     base_valloader_it = iter(base_val_loader)
     meta_valloader_it = iter(meta_valloader)
 #     for idx, data in enumerate(meta_valloader):
+
+    if opt.track_weights:
+        track_weights = pd.DataFrame(columns=["episode", "type", "label", "class", "fine_tune_epoch", "classifier_weight"])
+    if opt.track_label_inspired_weights:
+        track_inspired = pd.DataFrame(columns=["episode", "label", "fine_tune_epoch", "inspired_weight"])
+    
+
     for idx in range(opt.neval_episodes):
         print("\n**** Iteration {}/{} ****\n".format(idx, opt.neval_episodes))
+
         try:
             data = next(meta_valloader_it)
         except StopIteration:
             meta_valloader_it = iter(meta_valloader)
             data = next(meta_valloader_it)
-#         ipdb.set_trace()
+
         support_xs, support_ys, query_xs, query_ys = drop_a_dim(data)
         novelimgs = query_xs.detach().numpy()
 
@@ -719,6 +722,31 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
         if basenet.classifier.bias is not None:
             novel_bias = dummy_classifier.bias.detach().cuda()
             classifier.bias = nn.Parameter(torch.cat([base_bias, novel_bias]))
+            
+            
+        if opt.label_pull is not None:
+            dim = opt.word_embed_size # TODO 
+            embed_pth = os.path.join(opt.word_embed_path, "{0}_dim{1}.pickle".format(opt.dataset, dim)) # TOdo
+#             file = os.path.join("word_embeds","miniImageNet_dim500.pickle")
+            with (open(embed_pth, "rb")) as openfile:
+                embeds = pickle.load(openfile)
+            embed_tensor = [0] * len(vocab_all)
+            for (i,token) in enumerate(vocab_base + vocab_novel):
+                words = token.split(' ')
+                for w in words:
+                    try:
+                        embed_tensor[i] += embeds[w]
+                    except KeyError:
+                        embed_tensor[i] = np.zeros(dim)
+                embed_tensor[i] /= len(words)
+
+            X = np.stack(embed_tensor, axis=0)
+            if opt.glove: #todo
+                X = X[:,:300]
+            softmax = nn.Softmax(dim=1)
+            base_embeds = torch.cuda.FloatTensor(X[:len(vocab_base),:]) 
+            novel_embeds = torch.cuda.FloatTensor(X[len(vocab_base):,:])
+
 
         # Validate before training.
         test_acc, test_acc_top5, test_loss, _ = validate_fine_tune(query_xs, query_ys_id, net, criterion, opt)
@@ -734,12 +762,23 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
                                   lr=opt.learning_rate,
                                   momentum=opt.momentum,
                                   weight_decay=opt.weight_decay) # TODO anything to load from ckpt?
+            
+            
 
         # routine: fine-tuning for novel classes
         train_loss = 15
         epoch = 1
         while train_loss > opt.target_train_loss or epoch < opt.novel_epochs + 1:
             freeze_backbone_weights(net, opt, epoch, exclude=["classifier"])
+#             base_weight = classifier.weight.clone().detach().requires_grad_(False)[:len(vocab_base),:]
+            if opt.label_pull is not None and opt.pulling == "regularize":
+                # save softmax here.
+                scores_over_labels = softmax(novel_embeds @ torch.transpose(base_embeds, 0, 1))
+                label_inspired_weights = scores_over_labels @ base_weight # 5 x 640 
+#                 ipdb.set_trace()
+            else:
+                label_inspired_weights = None
+            
             train_acc, train_loss = fine_tune_novel(epoch,
                                                     support_xs,
                                                     support_ys_id,
@@ -748,18 +787,35 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
                                                     optimizer,
                                                     base_weight,
                                                     opt,
+                                                    label_inspired_weights,
                                                     base_bias)
+
             test_acc, test_acc_top5, test_loss, query_ys_pred = validate_fine_tune(query_xs,
                                                                                    query_ys_id,
                                                                                    net,
                                                                                    criterion,
                                                                                    opt)
+            
+            if opt.track_label_inspired_weights:
+                inspired_weights = label_inspired_weights.clone().cpu().numpy()
+                for k,lbl in enumerate(vocab_novel):
+                    track_inspired.loc[len(track_inspired)] = [idx, lbl, epoch, inspired_weights[k]]
+                
+                
+            if opt.track_weights:
+                classifier_weights = classifier.weight.clone().detach().cpu().numpy()
+                for k,lbl in enumerate(vocab_base):
+                    track_weights.loc[len(track_weights)] = [idx, "base", lbl, vocab_base[k], epoch, classifier_weights[k]]
+                len_base = len(vocab_base)
+                for k,lbl in enumerate(vocab_novel):
+                    track_weights.loc[len(track_weights)] = [idx, "novel", lbl, vocab_novel[k], epoch, classifier_weights[len_base+k]]
+                
+                
             if vis and idx == 0:
                 novel_info = [(idx, vocab_all[query_ys_id[i]], False, vocab_all[query_ys_pred[i]],
                                image_formatter(novelimgs[i,:,:,:]))  for i in range(len(query_ys_id))]
                 df = df.append(pd.DataFrame(novel_info, columns=df.columns), ignore_index=True)
             epoch += 1
-
 
         try:
             base_batch = next(base_valloader_it)
@@ -771,7 +827,7 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
         if vis and idx == 0:
             acc_base_ = eval_base(net, base_batch, criterion, vocab_all, df=df)
         else:
-            acc_base_ = eval_base(net, base_batch, criterion, vocab_all)
+            acc_base_ = eval_base(net, base_batch, criterion, vocab_all) # TODO: vocab all should be irrelevant?
 
         avg_score = (acc_base_ + test_acc.item())/2
 
@@ -779,13 +835,48 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
         acc_novel.append(test_acc.item())
         running_avg.append(avg_score)
 
+        
+        # Little pull here.
+        pull_acc_base_ = 0
+        pull_test_acc = 0
+        if opt.label_pull is not None and opt.pulling == "last-mile": #TODO
+            with torch.no_grad():
+                scores_over_labels = softmax(novel_embeds @ torch.transpose(base_embeds, 0, 1))
+                label_inspired_weights = scores_over_labels @ classifier.weight[:len(vocab_base)]
+                novel_weights_pulled = classifier.weight[len(vocab_base):,:] + opt.label_pull * (label_inspired_weights - classifier.weight[len(vocab_base):,:])
+                classifier.weight = nn.Parameter(torch.cat([base_weight, 
+                                                            novel_weights_pulled], 0))
+
+                    
+            pull_acc_base_ = eval_base(net, base_batch, criterion, vocab_all)
+            pull_test_acc, test_acc_top5, test_loss, _ = validate_fine_tune(query_xs,
+                                                                       query_ys_id,
+                                                                       net,
+                                                                       criterion,
+                                                                       opt)
+            pull_avg_score = (pull_acc_base_ + pull_test_acc.item())/2
+            pull_running_avg.append(pull_avg_score)
+            
+            print('{:25} {:.4f}\n'
+              '{:25} {:.4f}\n'
+              '{:25} {:.4f}\n'
+              '{:25} {:.4f}\n'.format(
+                  "Pull Novel incremental acc:",
+                  pull_test_acc.item(),
+                  "Pull Base incremental acc:",
+                  pull_acc_base_,
+                  "Pull Average:",
+                  pull_avg_score,
+                  "Pull Running Average:",
+                  np.mean(pull_running_avg)), flush=True)
+
         print('\n{:25} {:}\n'
               '{:25} {:}\n'
               '{:25} {:}\n'
               '{:25} {:.4f}\n'
               '{:25} {:.4f}\n'
               '{:25} {:.4f}\n'
-              '{:25} {:.4f}'.format(
+              '{:25} {:.4f}\n'.format(
                   "Novel classes are:",
                   novel_ids,
                   "Human labels are:",
@@ -799,12 +890,26 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
                   "Average:",
                   avg_score,
                   "Running Average:",
-                  np.mean(running_avg)))
-
+                  np.mean(running_avg),
+                  ), flush=True)
+        
+        
+        
+         
+    if opt.track_label_inspired_weights:
+        track_inspired.to_csv(f"track_inspired_{opt.eval_mode}_pulling_{opt.pulling}_{opt.label_pull}_target_loss_{opt.target_train_loss}.csv", index=False)
+        
+    if opt.track_weights:
+        track_weights.to_csv(f"track_weights_{opt.eval_mode}_pulling_{opt.pulling}_{opt.label_pull}_target_loss_{opt.target_train_loss}.csv", index=False)
+    
     if vis:
         return df
     else:
         return mean_confidence_interval(acc_novel), mean_confidence_interval(acc_base)
+    
+    
+
+        
 
 def few_shot_language_pretrain_linear_tune(net, ckpt, criterion, meta_valloader, base_val_loader, opt, vis=False):
 
@@ -839,7 +944,7 @@ def few_shot_language_pretrain_linear_tune(net, ckpt, criterion, meta_valloader,
         except StopIteration:
             meta_valloader_it = iter(meta_valloader)
             data = next(meta_valloader_it)
-#         ipdb.set_trace()
+
         support_xs, support_ys, query_xs, query_ys = drop_a_dim(data)
         novelimgs = query_xs.detach().numpy()
 
@@ -905,7 +1010,7 @@ def few_shot_language_pretrain_linear_tune(net, ckpt, criterion, meta_valloader,
 
         # Retrieve original transform_W if regularization
 #         orig_transform_W = ckpt['model']['classifier.transform_W'] if opt.lmbd_reg_transform_w else None
-#         ipdb.set_trace()
+
 
 
         # routine: fine-tuning for novel classes
