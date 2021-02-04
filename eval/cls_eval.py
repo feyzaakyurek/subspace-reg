@@ -23,7 +23,7 @@ def validate(val_loader, model, criterion, opt):
             input = input.float()
             if torch.cuda.is_available():
                 input = input.cuda()
-                target = target.cuda()
+                target = target.cuda().long()
 
             # compute output
             output = model(input)

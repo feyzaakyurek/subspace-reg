@@ -261,6 +261,9 @@ class LangLinearClassifier(nn.Module):
                 x = c
             if get_alphas:
                 return F.linear(x, self.weight, self.bias), logits
+            
+        else:
+            raise NotImplementedError()
 
         return F.linear(x, self.weight, self.bias)
 
@@ -319,7 +322,7 @@ class ResNet(nn.Module):
                                                            multip_fc=opt.multip_fc,
                                                            attention=opt.attention,
                                                            transform_query_size=opt.transform_query_size)
-                else:
+                else: # description classifier?
                     embed_pth = os.path.join(opt.description_embed_path,
                              "{0}_{1}_layer{2}_prefix_{3}.pickle".format(opt.dataset,
                                                              opt.desc_embed_model,
@@ -377,7 +380,10 @@ class ResNet(nn.Module):
         x = x.view(x.size(0), -1)
         feat = x
         if self.num_classes > 0:
-            x = self.classifier(x, get_alphas=get_alphas)
+            if self.vocab is not None:
+                x = self.classifier(x, get_alphas=get_alphas)
+            else: # linear classifier has no attribute get_alphas
+                x = self.classifier(x)
 
         if is_feat:
             return [f0, f1, f2, f3, feat], x

@@ -394,12 +394,12 @@ def fine_tune_novel(epoch, support_xs, support_ys_id, net, criterion, optimizer,
     support_ys_id = support_ys_id.cuda()
 
     # Compute output
-    if opt.attention is not None:
+    if opt.classifier in ["lang-linear", "description-linear"] and opt.attention is not None:
         output, alphas = net(support_xs, get_alphas=True)
         loss = criterion(output, support_ys_id) + opt.diag_reg * criterion(alphas, support_ys_id)
     else:
         output = net(support_xs)
-        loss = criterion(output, support_xs)
+        loss = criterion(output, support_ys_id)
 
     # output = net(support_xs)
     # loss = criterion(output, support_ys_id)
@@ -453,7 +453,7 @@ def validate_fine_tune(query_xs, query_ys_id, net, criterion, opt):
 
     return acc1[0], acc5[0], loss.item(), query_ys_pred
 
-def eval_base(net, base_batch, criterion, vocab_all, df=None):
+def eval_base(net, base_batch, criterion, vocab_all, df=None, return_preds=False):
     acc_base_ = []
     net.eval()
     with torch.no_grad():
@@ -473,6 +473,9 @@ def eval_base(net, base_batch, criterion, vocab_all, df=None):
             base_info = [(0, vocab_all[target[i]], True, vocab_all[ys_pred[i]],
                           image_formatter(imgdata[i,:,:,:]))  for i in range(len(target))]
             df = df.append(pd.DataFrame(base_info, columns=df.columns), ignore_index=True)
+            
+    if return_preds:
+        return np.mean(acc_base_), ys_pred
     return np.mean(acc_base_)
 
 def zero_shot_test(net, loader, opt, is_norm=True, use_logit=False, novel_only=True, vis=False, **kwargs):
@@ -665,6 +668,106 @@ def meta_test(net, testloader, use_logit=True, is_norm=True, classifier='LR'):
 
     return mean_confidence_interval(acc)
 
+def meta_hierarchical_incremental_test(net, testloader, baseloader, opt, is_norm=True, classifier='LR'):
+    net = net.eval()
+    novel_acc = []
+    base_acc = []
+    iteration = 0
+    baseloader_it = iter(baseloader)
+    
+#     preds_df = pd.DataFrame(columns = ["Episode", "Gold", "Prediction"])
+    
+    with torch.no_grad():
+        for idx, data in enumerate(testloader):
+            support_xs, support_ys, query_xs, query_ys = drop_a_dim(data)
+            support_xs = support_xs.cuda()
+            query_xs = query_xs.cuda()
+
+            # Get the backbone features of the support and query sets of novel classes.
+            support_features = net(support_xs.cuda()).view(support_xs.size(0), -1)
+            query_features = net(query_xs.cuda()).view(query_xs.size(0), -1)
+
+            # Normalize -- good for LR.
+            if is_norm:
+                support_features = normalize(support_features)
+                query_features = normalize(query_features)
+                
+            support_features = support_features.detach().cpu().numpy()
+            query_features = query_features.detach().cpu().numpy()
+
+            # Check support ys (is it 0, 1, ..)
+            thres = np.max(support_features)
+            novel_is_base = (np.sum(query_features > thres, 1) >= 1) * 1.
+            
+            # Fit classifier on solely novel support set.
+            if classifier == 'LR':
+                clf = LogisticRegression(random_state=0, solver='lbfgs', max_iter=1000,
+                                         multi_class='multinomial')
+                clf.fit(support_features, support_ys)
+            else:
+                raise NotImplementedError('Classifier not supported: {}'.format(classifier))
+                
+            # Get base samples for testing.
+            base_data = get_batch_cycle(baseloader_it, baseloader)
+            *_, base_query_xs, base_query_ys = drop_a_dim(base_data)
+            base_query_xs = base_query_xs.cuda()
+            base_query_features = net(base_query_xs).detach().cpu().numpy()
+            base_is_base = (np.sum(base_query_features > thres, 1) >= 1) * 1
+            
+            # Preds _if_ a given sample is novel.
+            novel_query_novel_pred = clf.predict(query_features)
+            base_query_novel_pred = clf.predict(base_query_features)
+            
+            # Preds _if_ a given sample is base.
+            novel_query_base_pred = np.argmax(query_features, 1)
+            base_query_base_pred = np.argmax(base_query_features, 1)
+
+            # Combine novel and base preds based on is_base
+            novel_preds = novel_is_base * novel_query_base_pred + (1-novel_is_base) * novel_query_novel_pred
+            base_preds = base_is_base * base_query_base_pred + (1-base_is_base) * base_query_novel_pred
+            
+            # Compute accuracies
+            novel1 = np.mean(novel_preds == query_ys)
+            base1 = np.mean(base_preds == base_query_ys)
+            novel_acc.append(novel1)
+            base_acc.append(base1)
+            
+            
+#             temp_df = pd.DataFrame({"Episode": np.repeat(iteration, len(query_ys)+len(base_query_ys)),
+#                                     "Gold": np.concatenate((query_ys, base_query_ys),0),
+#                                     "Prediction": np.concatenate((novel_preds, base_preds),0).astype(int)})
+#             preds_df = pd.concat([preds_df, temp_df], 0)
+            
+            print('Evaluation \t'
+                  'Iteration {:4d}/{:4d}\t'
+                  'Novel@1 {:10.3f}\t'
+                  'Base@1 {:10.3f}\t'
+                  'Avg@1 {:10.3f}\t'
+                  'Running {:10.3f}\t'.format(iteration,
+                                            opt.neval_episodes,
+                                            novel1, 
+                                            base1,
+                                            (novel1 + base1) / 2,
+                                            (np.mean(novel_acc) + np.mean(base_acc))/2))
+            
+            iteration += 1
+#             if iteration == 5:
+#                 preds_df.to_csv("csv_files/hierarchical_preds.csv", index=False)
+#                 return (np.mean(novel_acc) + np.mean(base_acc))/2
+            
+    return (np.mean(novel_acc) + np.mean(base_acc))/2
+            
+            
+            
+def get_batch_cycle(meta_trainloader_it, meta_trainloader):
+    try:
+        data = next(meta_trainloader_it)
+    except StopIteration:
+        meta_trainloader_it = iter(meta_trainloader)
+        data = next(meta_trainloader_it)
+    return data
+
+
 def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, base_val_loader, opt,  vis=False):
     if vis:
         df = pd.DataFrame(columns=['idx', 'class', 'isbase', 'predicted', 'img'])
@@ -673,16 +776,22 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
     acc_base = []
     running_avg = []
     pull_running_avg = []
+    
+#     preds_df = pd.DataFrame(columns = ["Episode", "Gold", "Prediction"])
+    
+    # Pretrained backbone.
     basenet = copy.deepcopy(net).cuda()
+    
+    # Linear layer of the backbone.
     base_weight = basenet.classifier.weight.clone().detach().requires_grad_(False)
     if basenet.classifier.bias is not None:
         base_bias   = basenet.classifier.bias.clone().detach().requires_grad_(False)
     else:
         base_bias = None
 
+    # Loaders for fine tuning and testing.
     base_valloader_it = iter(base_val_loader)
     meta_valloader_it = iter(meta_valloader)
-#     for idx, data in enumerate(meta_valloader):
 
     if opt.track_weights:
         track_weights = pd.DataFrame(columns=["episode", "type", "label", "class", "fine_tune_epoch", "classifier_weight"])
@@ -857,6 +966,29 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
         else:
             acc_base_ = eval_base(net, base_batch, criterion, vocab_all) # TODO: vocab all should be irrelevant?
 
+#         # To save preds (temporary, comment out below later) #
+#         _, base_query_ys, *_ = base_batch
+#         base_query_ys = base_query_ys.squeeze(0)
+#         acc_base_, base_preds  = eval_base(net, base_batch, criterion, vocab_all, return_preds=True)    
+#         id2orig = {}
+        
+#         for k,v in orig2id.items():
+#             id2orig[v] = k
+#         print("!!! Mini imagenet hard coded 64. !!")
+#         query_ys_pred = [id2orig[k.item()] if k>=64 else k.item() for k in query_ys_pred]
+#         base_preds = [id2orig[k.item()] if k>=64 else k.item() for k in base_preds]
+# #         ipdb.set_trace()
+#         temp_df = pd.DataFrame({"Episode": np.repeat(idx, len(query_ys)+len(base_query_ys)),
+#                                 "Gold": np.concatenate((query_ys, base_query_ys),0),
+#                                 "Prediction": np.concatenate((query_ys_pred, base_preds),0).astype(int)})
+#         preds_df = pd.concat([preds_df, temp_df], 0)
+        
+#         if idx == 5:
+#             preds_df.to_csv("csv_files/finetuning_preds.csv", index=False)
+#             exit(0)
+#         # To save preds (temporary, comment out above later) #
+        
+        
         avg_score = (acc_base_ + test_acc.item())/2
 
         acc_base.append(acc_base_)

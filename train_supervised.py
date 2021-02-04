@@ -101,7 +101,7 @@ def parse_option():
     parser.add_argument('-t', '--trial', type=str, default='1', help='the experiment id')
 
     if parser.parse_known_args()[0].classifier in ["linear"]:
-        parser.add_argument('--no_linear_bias', action='store_false', help='Use of bias in linear classifier.')
+        parser.add_argument('--no_linear_bias', action='store_true', help='Do not use bias in linear classifier.')
 
     if parser.parse_known_args()[0].classifier in ["lang-linear"]:
         parser.add_argument('--word_embed_size', type=int, default=500, help='Word embedding classifier')
@@ -146,43 +146,38 @@ def parse_option():
     opt.lr_decay_epochs = list([])
     for it in iterations:
         opt.lr_decay_epochs.append(int(it))
+        
+    opt.linear_bias = not opt.no_linear_bias
+    
+#     opt.model_name = '{}_{}_lr_{}_decay_{}_trans_{}'.format(opt.model,
+#                                                             opt.dataset,
+#                                                             opt.learning_rate,
+#                                                             opt.weight_decay,
+#                                                             opt.transform)
 
-    opt.model_name = '{}_{}_lr_{}_decay_{}_trans_{}'.format(opt.model,
-                                                            opt.dataset,
-                                                            opt.learning_rate,
-                                                            opt.weight_decay,
-                                                            opt.transform)
+#     if opt.cosine:
+#         opt.model_name = '{}_cosine'.format(opt.model_name)
 
-    if opt.cosine:
-        opt.model_name = '{}_cosine'.format(opt.model_name)
+#     if opt.adam:
+#         opt.model_name = '{}_useAdam'.format(opt.model_name)
 
-    if opt.adam:
-        opt.model_name = '{}_useAdam'.format(opt.model_name)
-
-    if 'SLURM_JOB_ID' in os.environ:
-        job_id = os.environ['SLURM_JOB_ID']
-    else:
-        job_id = np.random.randint(100000, 999999, 1)[0]
+#     if 'SLURM_JOB_ID' in os.environ:
+#         job_id = os.environ['SLURM_JOB_ID']
+#     else:
+#         job_id = np.random.randint(100000, 999999, 1)[0]
 
     if opt.classifier == "description-linear":
-        opt.model_name = '{}_trial_{}_classifier_{}_layer_{}_multip_{}_prefix_{}_{}'.format(opt.model_name,
-                                                                                         opt.trial,
-                                                                                         opt.classifier,
-                                                                                         opt.transformer_layer,
-                                                                                         opt.multip_fc,
-                                                                                         opt.prefix_label,
-                                                                                         job_id)
+        opt.model_name = '{}_classifier_{}_layer_{}_multipfc_{}_prefix_{}'.format(opt.model,
+                                                                                opt.classifier,
+                                                                                opt.transformer_layer,
+                                                                                opt.multip_fc,
+                                                                                opt.prefix_label)
     elif opt.classifier == "lang-linear":
-        opt.model_name = '{}_trial_{}_classifier_{}_multip_{}_{}'.format(opt.model_name,
-                                                                       opt.trial,
-                                                                       opt.classifier,
-                                                                       opt.multip_fc,
-                                                                       job_id)
+        opt.model_name = '{}_classifier_{}_multipfc_{}_{}'.format(opt.model,
+                                                                  opt.classifier,
+                                                                  opt.multip_fc)
     else:
-        opt.model_name = '{}_trial_{}_classifier_{}_{}'.format(opt.model_name,
-                                                             opt.trial,
-                                                             opt.classifier,
-                                                             job_id)
+        opt.model_name = '{}_classifier_{}'.format(opt.model, opt.classifier)
 
     opt.tb_folder = os.path.join(opt.tb_path, opt.model_name)
     if not os.path.isdir(opt.tb_folder):
@@ -243,7 +238,7 @@ def main():
         train_loader = DataLoader(TieredImageNet(args=opt, partition=train_partition, transform=train_trans),
                                   batch_size=opt.batch_size, shuffle=True, drop_last=True,
                                   num_workers=opt.num_workers)
-        val_loader = DataLoader(TieredImageNet(args=opt, partition='train_phase_val', transform=test_trans),
+        val_loader = DataLoader(TieredImageNet(args=opt, partition='val', transform=test_trans),
                                 batch_size=opt.batch_size // 2, shuffle=False, drop_last=False,
                                 num_workers=opt.num_workers // 2)
         meta_testloader = DataLoader(MetaTieredImageNet(args=opt, partition='test',
@@ -291,19 +286,19 @@ def main():
     else:
         raise NotImplementedError(opt.dataset)
 
-    # Save full dataset vocab if not available
-    vocab_train = [name for name in train_loader.dataset.label2human if name != '']
-    vocab_test = [name for name in meta_testloader.dataset.label2human if name != '']
-    vocab_val = [name for name in meta_valloader.dataset.label2human if name != '']
-    vocab = vocab_train + vocab_test + vocab_val
-
-    if opt.classifier == "lang-linear":
-        create_and_save_embeds(opt, vocab)
-
-    if opt.classifier == "description-linear":
-        create_and_save_descriptions(opt, vocab)
-
     if opt.classifier in ["lang-linear", "description-linear"]:
+        # Save full dataset vocab if not available
+        vocab_train = [name for name in train_loader.dataset.label2human if name != '']
+        vocab_test = [name for name in meta_testloader.dataset.label2human if name != '']
+        vocab_val = [name for name in meta_valloader.dataset.label2human if name != '']
+        vocab = vocab_train + vocab_test + vocab_val
+
+        if opt.classifier == "lang-linear":
+            create_and_save_embeds(opt, vocab)
+
+        if opt.classifier == "description-linear":
+            create_and_save_descriptions(opt, vocab)
+
         vocab = vocab_train
     else:
         vocab = None
@@ -404,14 +399,14 @@ def train(epoch, train_loader, model, criterion, optimizer, opt):
     end = time.time()
     for idx, (input, target,  _) in enumerate(train_loader):
         data_time.update(time.time() - end)
-
+#         ipdb.set_trace()
         input = input.float()
         if torch.cuda.is_available():
             input = input.cuda()
-            target = target.cuda()
+            target = target.cuda().long()
 
         # ===================forward=====================
-        if opt.attention is not None:
+        if opt.classifier != "linear" and opt.attention is not None:
             output, alphas = model(input, get_alphas=True)
             loss = criterion(output, target) + opt.diag_reg * criterion(alphas, target)
         else:

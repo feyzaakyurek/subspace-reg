@@ -5,7 +5,7 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 import torchvision.transforms as transforms
-
+import ipdb
 
 class TieredImageNet(Dataset):
     def __init__(self, args, partition='train', pretrain=True, is_sample=False, k=4096,
@@ -41,19 +41,19 @@ class TieredImageNet(Dataset):
             self.transform = transform
 
         if self.pretrain:
-            self.image_file_pattern = '%s_images.npz'
-            self.label_file_pattern = '%s_labels.pkl'
+            l
+            self.label_file_pattern = 'train_a_train_a_phase_%s_labels.pkl'
         else:
             self.image_file_pattern = '%s_images.npz'
             self.label_file_pattern = '%s_labels.pkl'
 
         self.data = {}
 
-        # modified code to load tieredImageNet
-        image_file = os.path.join(self.data_root, self.image_file_pattern % partition)
+        # modified code to load tieredImage os.path.join(self.data_root, self.image_file_pattern % partition)
         self.imgs = np.load(image_file)['images']
         label_file = os.path.join(self.data_root, self.label_file_pattern % partition)
-        self.labels = self._load_labels(label_file)['labels']
+        self.labels = self._load_labels(label_file)['label_specific']
+        ipdb.set_trace()
 
         # pre-process for contrastive sampling
         self.k = k
