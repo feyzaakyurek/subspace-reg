@@ -88,6 +88,9 @@ def parse_option():
                             help='Save the label inspired weights to a csv file.')
     parser.add_argument('--save_preds_0', action='store_true', help='Save predictions for the first episode.' ) # TODO: This may not be available for every evalmode
     parser.add_argument('--use_synonyms', action='store_true', help='Use synonyms.') # TODO
+    
+    if parser.parse_known_args()[0].eval_mode in ["few-shot-incremental-fine-tune"]:
+        parser.add_argument('--hierarchical_eval',  action='store_true', help='Use base/novel threshold during evaluation.')
 
     if parser.parse_known_args()[0].eval_mode in ["zero-shot-incremental","few-shot-incremental"]:
 
@@ -154,7 +157,7 @@ def parse_option():
         parser.add_argument('--lmbd_reg_transform_w',  type=float, default=None, help='regularization for the base classes.')
         parser.add_argument('--target_train_loss',  type=float, default=0.8, help='learning rate')
         parser.add_argument('--saliency',  action='store_true', help='append label to the beginning description')
-        parser.add_argument('--use_episodes', type=bool, default=False, help='use exact XtarNet episodes.')
+        parser.add_argument('--use_episodes', action='store_true', help='use exact XtarNet episodes.')
 
     if parser.parse_known_args()[0].classifier in ["description-linear"]:
         parser.add_argument('--description_embed_path', type=str, default="description_embeds")
