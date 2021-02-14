@@ -24,4 +24,4 @@
 # ======================
 
 # supervised pre-training
-python train_supervised.py --trial pretrain --model_path dumped --tb_path tb --data_root data --dataset tieredImageNet --classifier linear --epochs 60
+python train_supervised.py --trial pretrain --model_path dumped --tb_path tb --data_root data --dataset tieredImageNet --classifier linear --epochs 60 --lr_decay_epochs "30,45" --cosine --augment_pretrain_wtrainb > "dumped/tieredImageNet_backbone.out" 

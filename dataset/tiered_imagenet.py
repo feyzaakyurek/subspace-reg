@@ -41,7 +41,7 @@ class TieredImageNet(Dataset):
             self.transform = transform
 
         if self.pretrain:
-            l
+            self.image_file_pattern = 'train_a_train_a_phase_%s_images.npz'
             self.label_file_pattern = 'train_a_train_a_phase_%s_labels.pkl'
         else:
             self.image_file_pattern = '%s_images.npz'
@@ -49,11 +49,24 @@ class TieredImageNet(Dataset):
 
         self.data = {}
 
-        # modified code to load tieredImage os.path.join(self.data_root, self.image_file_pattern % partition)
+        # modified code to load tieredImageNet 
+        image_file = os.path.join(self.data_root, self.image_file_pattern % partition)
         self.imgs = np.load(image_file)['images']
         label_file = os.path.join(self.data_root, self.label_file_pattern % partition)
         self.labels = self._load_labels(label_file)['label_specific']
-        ipdb.set_trace()
+
+        
+        # if partition is train, we'll pool two files together to use all 351 classes in backbone training.
+        if self.pretrain and partition == "train" and args.augment_pretrain_wtrainb:
+            second_image_file = os.path.join(self.data_root, 'train_b_images.npz')
+            second_label_file = os.path.join(self.data_root, 'train_b_labels.pkl')
+            num_classes = np.max(self.labels) + 1
+            second_imgs = np.load(second_image_file)['images']
+            second_labels = self._load_labels(second_label_file)['label_specific']
+            second_labels = num_classes + second_labels
+            self.imgs = np.concatenate((self.imgs, second_imgs), axis=0)
+            self.labels = np.concatenate((self.labels, second_labels), axis=0)
+        
 
         # pre-process for contrastive sampling
         self.k = k
@@ -62,7 +75,6 @@ class TieredImageNet(Dataset):
             self.labels = np.asarray(self.labels)
             self.labels = self.labels - np.min(self.labels)
             num_classes = np.max(self.labels) + 1
-
             self.cls_positive = [[] for _ in range(num_classes)]
             for i in range(len(self.imgs)):
                 self.cls_positive[self.labels[i]].append(i)
