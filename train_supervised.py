@@ -32,7 +32,7 @@ from dataset.transform_cfg import transforms_options, transforms_list
 
 from util import adjust_learning_rate, accuracy, AverageMeter, create_and_save_embeds, create_and_save_descriptions
 from eval.meta_eval import meta_test
-from eval.cls_eval import validate
+# from eval.cls_eval import validate
 
 import ipdb
 # import wandb
@@ -102,6 +102,8 @@ def parse_option():
 
     if parser.parse_known_args()[0].classifier in ["linear"]:
         parser.add_argument('--no_linear_bias', action='store_true', help='Do not use bias in linear classifier.')
+        
+    parser.add_argument('--augment_pretrain_wtrainb', action='store_true', help='use train b classes too.')
 
     if parser.parse_known_args()[0].classifier in ["lang-linear"]:
         parser.add_argument('--word_embed_size', type=int, default=500, help='Word embedding classifier')
@@ -167,17 +169,18 @@ def parse_option():
 #         job_id = np.random.randint(100000, 999999, 1)[0]
 
     if opt.classifier == "description-linear":
-        opt.model_name = '{}_classifier_{}_layer_{}_multipfc_{}_prefix_{}'.format(opt.model,
+        opt.model_name = '{}_{}_classifier_{}_layer_{}_multipfc_{}_prefix_{}'.format(opt.dataset, 
+                                                                                  opt.model,
                                                                                 opt.classifier,
                                                                                 opt.transformer_layer,
                                                                                 opt.multip_fc,
                                                                                 opt.prefix_label)
     elif opt.classifier == "lang-linear":
-        opt.model_name = '{}_classifier_{}_multipfc_{}_{}'.format(opt.model,
+        opt.model_name = '{}_{}_classifier_{}_multipfc_{}_{}'.format(opt.dataset, opt.model,
                                                                   opt.classifier,
                                                                   opt.multip_fc)
     else:
-        opt.model_name = '{}_classifier_{}'.format(opt.model, opt.classifier)
+        opt.model_name = '{}_{}_classifier_{}'.format(opt.dataset, opt.model, opt.classifier)
 
     opt.tb_folder = os.path.join(opt.tb_path, opt.model_name)
     if not os.path.isdir(opt.tb_folder):
@@ -235,7 +238,8 @@ def main():
             n_cls = 64
     elif opt.dataset == 'tieredImageNet':
         train_trans, test_trans = transforms_options[opt.transform]
-        train_loader = DataLoader(TieredImageNet(args=opt, partition=train_partition, transform=train_trans),
+        train_loader = DataLoader(TieredImageNet(args=opt, partition=train_partition, 
+                                                 transform=train_trans),
                                   batch_size=opt.batch_size, shuffle=True, drop_last=True,
                                   num_workers=opt.num_workers)
         val_loader = DataLoader(TieredImageNet(args=opt, partition='val', transform=test_trans),
@@ -446,6 +450,61 @@ def train(epoch, train_loader, model, criterion, optimizer, opt):
           .format(top1=top1, top5=top5))
 
     return top1.avg, losses.avg
+
+
+
+def validate(val_loader, model, criterion, opt):
+    """One epoch validation"""
+    batch_time = AverageMeter()
+    losses = AverageMeter()
+    top1 = AverageMeter()
+    top5 = AverageMeter()
+
+    # switch to evaluate mode
+    model.eval()
+
+    with torch.no_grad():
+        end = time.time()
+        for idx, (input, target, _) in enumerate(val_loader):
+
+            input = input.float()
+            if torch.cuda.is_available():
+                input = input.cuda()
+                target = target.cuda().long()
+
+            # compute output
+            output = model(input)
+            
+            # If tieredImageNet ignore the last 151 classes for validation
+            # as they won't appear in the test either.
+            if opt.dataset == "tieredImageNet" and opt.augment_pretrain_wtrainb:
+                output = output[:,:200]
+            
+            loss = criterion(output, target)
+
+            # measure accuracy and record loss
+            acc1, acc5 = accuracy(output, target, topk=(1, 5))
+            losses.update(loss.item(), input.size(0))
+            top1.update(acc1[0], input.size(0))
+            top5.update(acc5[0], input.size(0))
+
+            # measure elapsed time
+            batch_time.update(time.time() - end)
+            end = time.time()
+
+            if idx % opt.print_freq == 0:
+                print('Test: [{0}/{1}]\t'
+                      'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
+                      'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
+                      'Acc@1 {top1.val:.3f} ({top1.avg:.3f})\t'
+                      'Acc@5 {top5.val:.3f} ({top5.avg:.3f})'.format(
+                       idx, len(val_loader), batch_time=batch_time, loss=losses,
+                       top1=top1, top5=top5))
+
+        print(' * Acc@1 {top1.avg:.3f} Acc@5 {top5.avg:.3f}'
+              .format(top1=top1, top5=top5))
+
+    return top1.avg, top5.avg, losses.avg
 
 
 if __name__ == '__main__':
