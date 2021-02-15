@@ -1,5 +1,3 @@
-# python eval_incremental.py --model_path dumped/resnet12_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain/resnet12_last.pth --data_root data --n_shots 5 --incremental_eval
-
 from __future__ import print_function
 import warnings
 warnings.filterwarnings('ignore',category=FutureWarning)
@@ -23,178 +21,27 @@ from models.util import create_model
 
 from dataset.mini_imagenet import MetaImageNet, ImageNet
 from dataset.tiered_imagenet import MetaTieredImageNet
-from dataset.cifar import MetaCIFAR100
 from dataset.transform_cfg import transforms_test_options, transforms_list
 
-from eval.meta_eval import meta_test, incremental_test, zero_shot_test, zero_shot_incremental_test, \
-few_shot_language_incremental_test, few_shot_finetune_incremental_test, few_shot_language_pretrain_linear_tune, meta_hierarchical_incremental_test
-from eval.cls_eval import incremental_validate
 from util import create_and_save_embeds, restricted_float, create_and_save_descriptions, create_and_save_synonyms
-
-
+from eval.meta_eval import incremental_test, meta_hierarchical_incremental_test
+from eval.zero_eval import zero_shot_test, zero_shot_incremental_test
+from eval.language_eval import few_shot_language_incremental_test, few_shot_finetune_incremental_test
 # import wandb
 # run = wandb.init(project="lil")
-
-def parse_option():
-
-    parser = argparse.ArgumentParser('argument for training')
-
-    # load pretrained model
-    parser.add_argument('--model', type=str, default='resnet12', choices=model_pool)
-    parser.add_argument('--model_path', type=str, default=None, help='absolute path to .pth model')
-
-    # dataset
-    parser.add_argument('--dataset', type=str, default='miniImageNet', choices=['miniImageNet', 'tieredImageNet',
-                                                                                'CIFAR-FS', 'FC100'])
-    parser.add_argument('--transform', type=str, default='A', choices=transforms_list)
-
-    # specify data_root
-    parser.add_argument('--data_root', type=str, default='', help='path to data root')
-
-    # meta setting
-    parser.add_argument('--n_test_runs', type=int, default=2000, metavar='N',
-                        help='Number of test runs')
-    parser.add_argument('--n_ways', type=int, default=5, metavar='N',
-                        help='Number of classes for doing each classification run')
-    parser.add_argument('--n_shots', type=int, default=1, metavar='N',
-                        help='Number of shots in test')
-    parser.add_argument('--n_queries', type=int, default=5, metavar='N',
-                        help='Number of query in test')
-    parser.add_argument('--n_aug_support_samples', default=5, type=int,
-                        help='The number of augmented samples for each meta test sample')
-    parser.add_argument('--num_workers', type=int, default=4, metavar='N',
-                        help='Number of workers for dataloader')
-    parser.add_argument('--test_batch_size', type=int, default=1, metavar='test_batch_size',
-                        help='Size of test batch)')
-    parser.add_argument('--test_base_batch_size', type=int, default=50, metavar='test_batch_size',
-                        help='Size of test batch)')
-    parser.add_argument('--set_seed', type=int, default=5, 
-                        help='Seed for torch and np.')
-    parser.add_argument('--eval_mode', type=str,
-                        choices=["few-shot", 
-                                 "few-shot-incremental", 
-                                 "zero-shot", 
-                                 "few-shot-incremental-fine-tune",
-                                 "zero-shot-incremental", 
-                                 "few-shot-language-incremental", 
-                                 "few-shot-incremental-language-pretrain-linear-tune",
-                                 "hierarchical-incremental-few-shot"])
-
-    parser.add_argument('--classifier', type=str,
-                        choices=['linear', 'lang-linear', 'description-linear'])
-    parser.add_argument('--track_weights', action='store_true',
-                            help='Save the classifier weights to a csv file.')
-    parser.add_argument('--track_label_inspired_weights', action='store_true',
-                            help='Save the label inspired weights to a csv file.')
-    parser.add_argument('--save_preds_0', action='store_true', help='Save predictions for the first episode.' ) # TODO: This may not be available for every evalmode
-    parser.add_argument('--use_synonyms', action='store_true', help='Use synonyms.') # TODO
-    
-    if parser.parse_known_args()[0].eval_mode in ["few-shot-incremental-fine-tune"]:
-        parser.add_argument('--hierarchical_eval',  action='store_true', help='Use base/novel threshold during evaluation.')
-
-    if parser.parse_known_args()[0].eval_mode in ["zero-shot-incremental","few-shot-incremental"]:
-
-        parser.add_argument("--start_alpha", type=restricted_float, default="0.7",
-                            help="Alpha is the fraction to multiply base scores with. Start is the beginning of the range to try.")
-        parser.add_argument("--end_alpha", type=restricted_float, default="0.8",
-                            help="Alpha is the fraction to multiply base scores with. End is the beginning of the range to try.")
-        parser.add_argument("--inc_alpha", type=restricted_float, default="0.01",
-                            help="Alpha is the fraction to multiply base scores with. Inc is increment.")
-
-    if parser.parse_known_args()[0].eval_mode in ["zero-shot-incremental",
-                                                  "few-shot-incremental",
-                                                  "few-shot-language-incremental",
-                                                  "few-shot-incremental-fine-tune",
-                                                  "few-shot-incremental-language-pretrain-linear-tune",
-                                                  "hierarchical-incremental-few-shot"]:
-        parser.add_argument("--neval_episodes", type=int, default=2000,
-                            help="Number of evaluation episodes both for base and novel.")
-
-
-    if parser.parse_known_args()[0].classifier in ["lang-linear", "description-linear"]:
-        parser.add_argument('--word_embed_size', type=int, default=500,
-                            help='Word embedding classifier')
-        parser.add_argument('--word_embed_path', type=str, default="word_embeds",
-                            help='Where to store word embeds pickles for dataset.')
-        parser.add_argument('--word_embed_type', type=str, default="")
-        parser.add_argument('--lang_classifier_bias', action='store_true',
-                            help='Use of bias in lang classifier.')
-        parser.add_argument('--multip_fc', type=float, default=0.05)
-        parser.add_argument('--diag_reg', type=float, default=0.05)
-        parser.add_argument('--attention', type=str, choices=["sum","concat","context"], default=None, help='Use of attention in lang classifier.')
-        parser.add_argument('--orig_alpha', type=float, default=1.0)
-        parser.add_argument('--transform_query_size', type=int, default=None, help='Output size of key, query, value in attention.')
-
-    parser.add_argument('--label_pull', type=float, default=None)    
-    if parser.parse_known_args()[0].eval_mode in ["few-shot-incremental-fine-tune"]:
-        parser.add_argument('--word_embed_size', type=int, default=500,
-                            help='Word embedding classifier')
-        parser.add_argument('--word_embed_path', type=str, default="word_embeds",
-                            help='Where to store word embeds pickles for dataset.')
-        parser.add_argument('--glove', action='store_true',
-                            help='Use of Glove embeds instead of Vico.')
-        
-        
-        if parser.parse_known_args()[0].label_pull is not None:
-            parser.add_argument('--pulling', type=str, default="regularize",
-                            help='How should we leverage label inspired weights?')
-
-    if parser.parse_known_args()[0].eval_mode in ['zero-shot-incremental']:
-        parser.add_argument('--num_novel_combs', type=int, default=0.05,
-                            help='Number of combinations of novel/test classes to evaluate base samples against:)')
-
-    if parser.parse_known_args()[0].eval_mode in ["few-shot-language-incremental",
-                                                  "few-shot-incremental-fine-tune",
-                                                  "few_shot_language_pretrain_linear_tune",
-                                                  "few-shot-incremental-language-pretrain-linear-tune",
-                                                  "hierarchical-incremental-few-shot"]:
-        parser.add_argument('--novel_epochs', type=int, default=15, help='number of epochs for novel support set.')
-        parser.add_argument('--learning_rate', type=float, default=0.01, help='learning rate')
-        parser.add_argument('--weight_decay', type=float, default=5e-4, help='weight decay')
-        parser.add_argument('--momentum', type=float, default=0.9, help='momentum')
-        parser.add_argument('--adam', action='store_true', help='use adam optimizer')
-        parser.add_argument('--freeze_backbone_at', type=int, default=1, help='freeze backbone while updating classifier at the epoch X, epochs start at 1.')
-        parser.add_argument('--lmbd_reg_transform_w',  type=float, default=None, help='regularization for the base classes.')
-        parser.add_argument('--target_train_loss',  type=float, default=0.8, help='learning rate')
-        parser.add_argument('--saliency',  action='store_true', help='append label to the beginning description')
-        parser.add_argument('--use_episodes', action='store_true', help='use exact XtarNet episodes.')
-
-    if parser.parse_known_args()[0].classifier in ["description-linear"]:
-        parser.add_argument('--description_embed_path', type=str, default="description_embeds")
-        parser.add_argument('--desc_embed_model', type=str, default="bert-base-cased")
-        parser.add_argument('--transformer_layer', type=str, default=6)
-        parser.add_argument('--prefix_label', action='store_true', help='append label to the beginning description')
-
-    opt = parser.parse_args()
-
-    if 'trainval' in opt.model_path:
-        opt.use_trainval = True
-    else:
-        opt.use_trainval = False
-
-    # set the path according to the environment
-    if not opt.data_root:
-        opt.data_root = './data/{}'.format(opt.dataset)
-    else:
-        opt.data_root = '{}/{}'.format(opt.data_root, opt.dataset)
-        opt.data_aug = True
-
-    return opt
-
-
+from .configs import parse_option_eval
 def main():
-
-    opt = parse_option()
+    opt = parse_option_eval()
 
     # Add git commit hash
     process = subprocess.Popen(['git', 'rev-parse', '--short', 'HEAD'], shell=False, stdout=subprocess.PIPE)
     git_head_hash = process.communicate()[0].strip()
     opt.git_head_hash = git_head_hash.decode()
-    
+
     # Set seeds
     torch.manual_seed(opt.set_seed)
     np.random.seed(opt.set_seed)
-    
+
     print("************* Training arguments *************")
 #     run.config.update(opt)
     args = opt
@@ -227,7 +74,7 @@ def main():
                                          batch_size=opt.test_batch_size, shuffle=True, drop_last=False,
                                          num_workers=opt.num_workers)
             train_loader = base_val_loader
-            
+
         else:
 
             train_loader = DataLoader(ImageNet(args=opt, partition='train', transform=train_trans), #FIXME: use train
@@ -252,7 +99,7 @@ def main():
                                                   pretrain=True),
                                      batch_size=opt.test_batch_size, shuffle=True, drop_last=False,
                                      num_workers=opt.num_workers)
-    
+
             base_val_loader = DataLoader(MetaImageNet(args=opt, partition='val',
                                                       train_transform=train_trans,
                                                       test_transform=test_trans,
@@ -281,8 +128,8 @@ def main():
             n_cls = 64
     elif opt.dataset == 'tieredImageNet':
         train_trans, test_trans = transforms_test_options[opt.transform]
-        
-        
+
+
         base_test_loader = DataLoader(MetaImageNet(args=opt, partition='test',
                                       train_transform=train_trans,
                                       test_transform=test_trans,
@@ -290,7 +137,7 @@ def main():
                                       pretrain=True),
                          batch_size=opt.test_batch_size, shuffle=True, drop_last=False,
                          num_workers=opt.num_workers)
-    
+
         base_val_loader = DataLoader(MetaImageNet(args=opt, partition='val',
                                                   train_transform=train_trans,
                                                   test_transform=test_trans,
@@ -298,8 +145,8 @@ def main():
                                                   pretrain=True),
                                      batch_size=opt.test_batch_size, shuffle=True, drop_last=False,
                                      num_workers=opt.num_workers)
-        
-        
+
+
         meta_testloader = DataLoader(MetaTieredImageNet(args=opt, partition='test',
                                                         train_transform=train_trans,
                                                         test_transform=test_trans,
@@ -316,29 +163,6 @@ def main():
             n_cls = 448
         else:
             n_cls = 351
-    elif opt.dataset == 'CIFAR-FS' or opt.dataset == 'FC100':
-        train_trans, test_trans = transforms_test_options['D']
-        meta_testloader = DataLoader(MetaCIFAR100(args=opt, partition='test',
-                                                  train_transform=train_trans,
-                                                  test_transform=test_trans,
-                                                  fix_seed=False),
-                                     batch_size=opt.test_batch_size, shuffle=False, drop_last=False,
-                                     num_workers=opt.num_workers)
-        meta_valloader = DataLoader(MetaCIFAR100(args=opt, partition='val',
-                                                 train_transform=train_trans,
-                                                 test_transform=test_trans,
-                                                 fix_seed=False),
-                                    batch_size=opt.test_batch_size, shuffle=False, drop_last=False,
-                                    num_workers=opt.num_workers)
-        if opt.use_trainval:
-            n_cls = 80
-        else:
-            if opt.dataset == 'CIFAR-FS':
-                n_cls = 64
-            elif opt.dataset == 'FC100':
-                n_cls = 60
-            else:
-                raise NotImplementedError('dataset not supported: {}'.format(opt.dataset))
     else:
         raise NotImplementedError(opt.dataset)
 
@@ -347,7 +171,7 @@ def main():
     if opt.classifier in ["lang-linear", "description-linear"]:
         opt.multip_fc = ckpt['opt'].multip_fc
         opt.diag_reg = ckpt['opt'].diag_reg
-    
+
         # Save full dataset vocab if not available
         vocab_train = [name for name in train_loader.dataset.label2human if name != '']
         vocab_test = [name for name in meta_testloader.dataset.label2human if name != '']
@@ -360,8 +184,8 @@ def main():
         vocab = vocab_train
     else:
         vocab = None
-        
-    # This is another scenario in which we'll need the embeds.    
+
+    # This is another scenario in which we'll need the embeds.
     if opt.label_pull is not None:
 #         ipdb.set_trace()
         vocab_train = [name for name in train_loader.dataset.label2human if name != '']
@@ -369,14 +193,14 @@ def main():
         vocab_val = [name for name in meta_valloader.dataset.label2human if name != '']
         vocab_all = vocab_train + vocab_test + vocab_val
         create_and_save_embeds(opt, vocab_all)
-        
+
         if opt.use_synonyms:
             create_and_save_synonyms(opt, vocab_train, vocab_test, vocab_val)
-    
-    # Load model if available, check bias. 
+
+    # Load model if available, check bias.
 
     ckpt = torch.load(opt.model_path)
-    
+
 
 #         opt.no_linear_bias = ckpt['opt'].no_linear_bias
 
@@ -387,13 +211,13 @@ def main():
             opt.linear_bias = True
         else:
             opt.linear_bias = False
-        
+
 #         try:
 #             bias = ckpt['model']['classifier.bias']
 #             opt.linear_bias = bias is not None
 #         except:
 #             print("!!!! Setting bias to false !!!!")
-#             opt.linear_bias = False 
+#             opt.linear_bias = False
 
     model = create_model(opt.model, n_cls, opt, vocab=vocab, dataset=opt.dataset)
     print("Loading model...")
@@ -561,8 +385,8 @@ def main():
     elif opt.eval_mode == 'few-shot-incremental-fine-tune':
         assert opt.classifier == "linear"
         criterion = nn.CrossEntropyLoss()
-        
-        
+
+
 #         start = time.time()
 #         opt.split = "val"
 #         novel, base = few_shot_finetune_incremental_test(model,
@@ -576,7 +400,7 @@ def main():
 #         print('val_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel[0], novel[1], val_time))
 #         print('val_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base[0], base[1], val_time))
 #         print('val_acc_average: {:.4f}'.format(avg_score))
-        
+
 #         if opt.save_preds_0:
 #             df = few_shot_finetune_incremental_test(model,
 #                                                     ckpt,
@@ -586,7 +410,7 @@ def main():
 #                                                     opt,
 #                                                     vis=True)
 #             df.to_csv(f"vis_{opt.eval_mode}_pulling_{opt.pulling}_{opt.label_pull}_target_loss_{opt.target_train_loss}_synonyms_{opt.use_synonyms}.csv", index=False)
-        
+
         if not opt.track_weights and not opt.track_label_inspired_weights:
             start = time.time()
             opt.split = "test" # TODO: run only for best val.
@@ -624,16 +448,16 @@ def main():
         test_time = time.time() - start
         print('test_acc_feat: {:.4f}, test_std: {:.4f}, time: {:.1f}'.format(test_acc_feat, test_std_feat, test_time))
 
-        
+
     elif opt.eval_mode == "hierarchical-incremental-few-shot":
         start = time.time()
         val_acc = meta_hierarchical_incremental_test(model, meta_testloader, base_test_loader, opt)
         val_time = time.time() - start
         print('val_acc: {:.4f}, val_std: {:.4f}, time: {:.1f}'.format(val_acc, 0, val_time))
-        
-        
-        
-        
+
+
+
+
     else:
         raise NotImplementedError
 
