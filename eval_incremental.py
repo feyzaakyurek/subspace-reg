@@ -398,9 +398,9 @@ def main():
                                                          base_val_loader,
                                                          opt)
         val_time = time.time() - start
-        avg_score = (base[0]+novel[0])/2
-        print('val_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel[0], novel[1], val_time))
-        print('val_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base[0], base[1], val_time))
+        avg_score = (base+novel)/2
+        print('val_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel, 0, val_time))
+        print('val_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base, 0, val_time))
         print('val_acc_average: {:.4f}'.format(avg_score))
 
         if opt.save_preds_0:
@@ -424,9 +424,9 @@ def main():
                                                              base_test_loader,
                                                              opt)
             test_time = time.time() - start
-            avg_score = (base[0]+novel[0])/2
-            print('test_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel[0], novel[1], test_time))
-            print('test_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base[0], base[1], test_time))
+            avg_score = (base+novel)/2
+            print('test_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel, 0, test_time))
+            print('test_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base, 0, test_time))
             print('test_acc_average: {:.4f}'.format(avg_score))
 
     elif opt.eval_mode == "few-shot":

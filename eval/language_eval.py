@@ -271,12 +271,14 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
               '{:25} {:.4f}\n'
               '{:25} {:.4f}\n'
               '{:25} {:.4f}\n'
+              '{:25} {:.4f}\n'
+              '{:25} {:.4f}\n'
               '{:25} {:.4f}\n'.format(
                   "Classes:",
                   novel_labels,
                   "Labels:",
                   vocab_novel,
-                  "Fine-training epochs:",
+                  "Fine-tuning epochs:",
                   epoch-1,
                   "Novel acc:",
                   test_acc.item(),
@@ -325,7 +327,7 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
     if vis:
         return df
     else:
-        return mean_confidence_interval(acc_novel), mean_confidence_interval(acc_base)
+        return acc_novel.avg, acc_base.avg
 
 def few_shot_language_incremental_test(net, ckpt, criterion, meta_valloader, base_val_loader, opt, vis=False):
     if vis:
