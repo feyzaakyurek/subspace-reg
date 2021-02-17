@@ -4,6 +4,7 @@ import numpy as np
 import io
 import base64
 from PIL import Image
+import scipy
 
 class AverageMeter(object):
     """Computes and stores the average and current value"""
@@ -87,6 +88,26 @@ def Cosine(support, support_ys, query):
     max_idx = np.argmax(cosine_distance, axis=1)
     pred = [support_ys[idx] for idx in max_idx]
     return pred
+
+def get_optim(net, opt):
+    if opt.adam:
+        optimizer = torch.optim.Adam(net.parameters(),
+                                     lr=opt.learning_rate,
+                                     weight_decay=0.0005)
+    else:
+        optimizer = torch.optim.SGD(net.parameters(),
+                                    lr=opt.learning_rate,
+                                    momentum=opt.momentum,
+                                    weight_decay=opt.weight_decay)
+    return optimizer
+
+def get_vocab(loaders):
+    vocabs = []
+    for loader in loaders:
+        label2human = loader.dataset.label2human
+        vocab = [name for name in label2human if name != '']
+        vocabs.append(vocab)
+    return vocabs
 
 def get_vocabs(base_loader=None, novel_loader=None, query_ys=None):
     vocab_all = []

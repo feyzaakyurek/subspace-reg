@@ -19,6 +19,7 @@ from torch.utils.data import DataLoader
 
 from models import model_pool
 from models.util import create_model
+from models.resnet_language import LangPuller
 
 from dataset.mini_imagenet import ImageNet, MetaImageNet
 from dataset.tiered_imagenet import TieredImageNet, MetaTieredImageNet
@@ -28,7 +29,7 @@ from util import adjust_learning_rate, create_and_save_embeds, create_and_save_d
 from eval.util import accuracy, AverageMeter, validate
 
 import ipdb
-from .configs import parse_option_supervised
+from configs import parse_option_supervised
 #import wandb
 # os.environ["WANDB_API_KEY"] = "1c6a939ef88d70da594fe947cdd93866d84bee87"
 # os.environ["WANDB_MODE"] = "dryrun"
@@ -88,30 +89,31 @@ def main():
     else:
         raise NotImplementedError(opt.dataset)
 
-    if opt.classifier in ["lang-linear", "description-linear"]:
+    if opt.classifier in ["lang-linear", "description-linear"] or opt.label_pull is not None:
         # Save full dataset vocab if not available
         vocab_train = [name for name in train_loader.dataset.label2human if name != '']
         vocab_test = [name for name in meta_testloader.dataset.label2human if name != '']
         vocab_val = [name for name in meta_valloader.dataset.label2human if name != '']
         vocab = vocab_train + vocab_test + vocab_val
 
-        if opt.classifier == "lang-linear":
+        if opt.classifier == "lang-linear" or opt.label_pull:
             create_and_save_embeds(opt, vocab)
 
         if opt.classifier == "description-linear":
             create_and_save_descriptions(opt, vocab)
-
+        
         vocab = vocab_train
+        if opt.label_pull is not None:
+            lang_puller = LangPuller(opt, vocab_train, vocab_train)
+            vocab = None
+        
     else:
         vocab = None
+        
 
     # model
     model = create_model(opt.model, n_cls, opt, vocab=vocab)
 #     wandb.watch(model)
-   # if reload_path == '':
-   #     ckpt = torch.load(opt.reload_path)
-   #     model.load_state_dict(ckpt['model'])
-
 
     # optimizer
     if opt.adam:
@@ -156,7 +158,7 @@ def main():
             print("==> training...")
 
             time1 = time.time()
-            train_acc, train_loss = train(epoch, train_loader, model, criterion, optimizer, opt)
+            train_acc, train_loss = train(epoch, train_loader, model, criterion, optimizer, opt, lang_puller)
             time2 = time.time()
             print('epoch {}, total time {:.2f}'.format(epoch, time2 - time1))
 
@@ -188,7 +190,7 @@ def main():
     torch.save(state, save_file)
 
 
-def train(epoch, train_loader, model, criterion, optimizer, opt):
+def train(epoch, train_loader, model, criterion, optimizer, opt, lang_puller=None):
     """One epoch training"""
     model.train()
 
@@ -201,7 +203,6 @@ def train(epoch, train_loader, model, criterion, optimizer, opt):
     end = time.time()
     for idx, (input, target,  _) in enumerate(train_loader):
         data_time.update(time.time() - end)
-#         ipdb.set_trace()
         input = input.float()
         if torch.cuda.is_available():
             input = input.cuda()
@@ -215,7 +216,11 @@ def train(epoch, train_loader, model, criterion, optimizer, opt):
         else:
             output = model(input)
             loss = criterion(output, target)
-
+        if opt.label_pull is not None:
+            penalty = lang_puller.loss1(opt.label_pull, 
+                                        lang_puller(model.classifier.weight),
+                                        model.classifier.weight)
+            loss += penalty
         acc1, acc5 = accuracy(output, target, topk=(1, 5))
         losses.update(loss.item(), input.size(0))
         top1.update(acc1[0], input.size(0))

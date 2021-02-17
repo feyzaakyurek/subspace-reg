@@ -23,6 +23,7 @@ transform_A = [
 
     transforms.Compose([
         lambda x: Image.fromarray(x),
+        lambda x: np.asarray(x),
         transforms.ToTensor(),
         normalize
     ])

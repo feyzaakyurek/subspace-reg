@@ -8,7 +8,7 @@ import torchvision.transforms as transforms
 import warnings
 import re
 import ipdb
-
+torch.multiprocessing.set_sharing_strategy('file_system')
 class ImageNet(Dataset):
     def __init__(self, args, partition='train', pretrain=True, is_sample=False, k=4096,
                  transform=None):
@@ -263,7 +263,7 @@ class MetaImageNet(ImageNet):
                 support_xs = torch.stack(list(map(lambda x: self.train_transform(x.squeeze()), support_xs)))
                 
 
-        return support_xs, support_ys, query_xs, query_ys
+        return support_xs.float(), support_ys, query_xs.float(), query_ys
 
     def __len__(self):
         if self.use_episodes:

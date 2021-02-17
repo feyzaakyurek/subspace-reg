@@ -29,7 +29,9 @@ from eval.zero_eval import zero_shot_test, zero_shot_incremental_test
 from eval.language_eval import few_shot_language_incremental_test, few_shot_finetune_incremental_test
 # import wandb
 # run = wandb.init(project="lil")
-from .configs import parse_option_eval
+from configs import parse_option_eval
+
+torch.multiprocessing.set_sharing_strategy('file_system')
 def main():
     opt = parse_option_eval()
 
@@ -387,29 +389,29 @@ def main():
         criterion = nn.CrossEntropyLoss()
 
 
-#         start = time.time()
-#         opt.split = "val"
-#         novel, base = few_shot_finetune_incremental_test(model,
-#                                                          ckpt,
-#                                                          criterion,
-#                                                          meta_valloader,
-#                                                          base_val_loader,
-#                                                          opt)
-#         val_time = time.time() - start
-#         avg_score = (base[0]+novel[0])/2
-#         print('val_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel[0], novel[1], val_time))
-#         print('val_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base[0], base[1], val_time))
-#         print('val_acc_average: {:.4f}'.format(avg_score))
+        start = time.time()
+        opt.split = "val"
+        novel, base = few_shot_finetune_incremental_test(model,
+                                                         ckpt,
+                                                         criterion,
+                                                         meta_valloader,
+                                                         base_val_loader,
+                                                         opt)
+        val_time = time.time() - start
+        avg_score = (base[0]+novel[0])/2
+        print('val_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel[0], novel[1], val_time))
+        print('val_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base[0], base[1], val_time))
+        print('val_acc_average: {:.4f}'.format(avg_score))
 
-#         if opt.save_preds_0:
-#             df = few_shot_finetune_incremental_test(model,
-#                                                     ckpt,
-#                                                     criterion,
-#                                                     meta_valloader,
-#                                                     base_val_loader,
-#                                                     opt,
-#                                                     vis=True)
-#             df.to_csv(f"vis_{opt.eval_mode}_pulling_{opt.pulling}_{opt.label_pull}_target_loss_{opt.target_train_loss}_synonyms_{opt.use_synonyms}.csv", index=False)
+        if opt.save_preds_0:
+            df = few_shot_finetune_incremental_test(model,
+                                                    ckpt,
+                                                    criterion,
+                                                    meta_valloader,
+                                                    base_val_loader,
+                                                    opt,
+                                                    vis=True)
+            df.to_csv(f"vis_{opt.eval_mode}_pulling_{opt.pulling}_{opt.label_pull}_target_loss_{opt.target_train_loss}_synonyms_{opt.use_synonyms}.csv", index=False)
 
         if not opt.track_weights and not opt.track_label_inspired_weights:
             start = time.time()

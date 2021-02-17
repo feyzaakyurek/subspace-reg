@@ -8,6 +8,69 @@ import os
 import pickle
 import ipdb
 
+class LangPuller(nn.Module):
+    def __init__(self,opt, vocab_base, vocab_novel):
+        super(LangPuller, self).__init__()
+        dim = opt.word_embed_size # TODO
+        
+        # Retrieve novel embeds
+        embed_pth = os.path.join(opt.word_embed_path, "{0}_dim{1}.pickle".format(opt.dataset, dim)) # TODO
+        with open(embed_pth, "rb") as openfile:
+            embeds = pickle.load(openfile)
+
+        novel_embeds = [0] * len(vocab_novel)
+        for (i,token) in enumerate(vocab_novel):
+            words = token.split(' ')
+            for w in words:
+                try:
+                    novel_embeds[i] += embeds[w]
+                except KeyError:
+                    novel_embeds[i] = np.zeros(dim)
+            novel_embeds[i] /= len(words)
+        self.novel_embeds = torch.cuda.FloatTensor(np.stack(novel_embeds, axis=0))
+
+        # Retrieve base embeds
+        if opt.use_synonyms:
+            embed_pth = os.path.join(opt.word_embed_path, 
+                                     "{0}_dim{1}_base_synonyms.pickle".format(opt.dataset, dim)) # TOdo
+            with open(embed_pth, "rb") as openfile:
+                label_syn_embeds = pickle.load(openfile)
+            base_embeds = []
+            for base_label in vocab_base:
+                base_embeds.append(label_syn_embeds[base_label])
+        else:
+            embed_pth = os.path.join(opt.word_embed_path, "{0}_dim{1}.pickle".format(opt.dataset, dim)) # TODO
+            with open(embed_pth, "rb") as openfile:
+                embeds = pickle.load(openfile)
+            base_embeds = [0] * len(vocab_base)
+            for (i,token) in enumerate(vocab_base):
+                words = token.split(' ')
+                for w in words:
+                    try:
+                        base_embeds[i] += embeds[w]
+                    except KeyError:
+                        base_embeds[i] = np.zeros(dim)
+                base_embeds[i] /= len(words)
+        self.base_embeds = torch.cuda.FloatTensor(np.stack(base_embeds, axis=0))
+        # This will be used to compute label attractors.
+        self.softmax = nn.Softmax(dim=1)
+        # If Glove, use the first 300 TODO
+        if opt.glove: #todo
+            self.base_embeds = self.base_embeds[:,:300]
+            self.novel_embeds = self.novel_embeds[:,:300]
+
+    def forward(self, base_weight, mask=False):
+        scores = self.novel_embeds @ torch.transpose(self.base_embeds, 0, 1)
+        if mask:
+            scores.fill_diagonal_(-9999) 
+        scores = self.softmax(scores)
+        return scores @ base_weight # 5 x 640 for fine-tuning.
+    
+    def loss1(self, pull, inspired, weights):
+#         return torch.exp(pull) * self.mse(weights, inspired)
+        return pull * torch.norm(inspired - weights)**2
+
+        
 class LangLinearClassifier(nn.Module):
     def __init__(self, vocab,  load_embeds, dim, description=False,
                  cdim=640, bias=False, verbose=True, multip_fc=0.15,
@@ -123,6 +186,9 @@ class LangLinearClassifier(nn.Module):
             raise NotImplementedError()
 
         return F.linear(x, self.weight, self.bias)
+    
+    
+    
 
 class ResNet(nn.Module):
 
@@ -245,7 +311,44 @@ class ResNet(nn.Module):
             return [f0, f1, f2, f3, feat], x
         else:
             return x
+        
+    def _get_base_weights(self):
+        base_weight = self.classifier.weight.detach().clone().requires_grad_(False)
+        if self.classifier.bias is not None:
+            base_bias = self.classifier.bias.detach().clone().requires_grad_(False)
+            return base_weight, base_bias
+        else:
+            return base_weight, None
+    
+    def augment_base_classifier_(self, n, novel_weight=None, novel_bias=None):
+        # Create classifier weights for novel classes.
+        base_device = self.classifier.weight.device
+        base_weight = self.classifier.weight.detach()
+        if self.classifier.bias is not None:
+            base_bias = self.classifier.bias.detach()
+        else:
+            base_bias = None
+            
+        if novel_weight is None:
+            novel_classifier = nn.Linear(640, n, bias=(base_bias is not None)) # TODO!!
+            novel_weight     = novel_classifier.weight.detach()
+            if base_bias is not None and novel_bias is None:
+                novel_bias = novel_classifier.bias.detach()
 
+        augmented_weight = torch.cat([base_weight, novel_weight.to(base_device)], 0)
+        self.classifier.weight = nn.Parameter(augmented_weight, requires_grad=True)
+            
+        if base_bias is not None:
+            augmented_bias = torch.cat([base_bias, novel_bias.to(base_device)])
+            self.classifier.bias   = nn.Parameter(augmented_bias, requires_grad=True)
+            
+    def regloss(self, lmbd, base_weight, base_bias=None):
+#         return torch.exp(pull) * self.mse(weights, inspired)
+        reg = lmbd * torch.norm(self.classifier.weight[:base_weight.size(0),:] - base_weight) #**2??
+        if base_bias is not None:
+            reg += lmbd * torch.norm(self.classifier.bias[:base_weight.size(0)] - base_bias)**2
+        return reg
+    
 class BasicBlock(nn.Module):
     expansion = 1
 

@@ -1,5 +1,11 @@
 import argparse
 from dataset.transform_cfg import transforms_options, transforms_list
+from models import model_pool
+
+import os
+import torch 
+import subprocess
+
 
 def parse_option_eval():
     parser = argparse.ArgumentParser('argument for training')
@@ -180,6 +186,7 @@ def parse_option_supervised():
     # specify folder
     parser.add_argument('--reload_path', type=str, default='', help='path to load model from')
     parser.add_argument('--model_path', type=str, default='', help='path to save model')
+#     parser.add_argument('--save_folder', type=str, default='', help='path to save model')
     parser.add_argument('--tb_path', type=str, default='', help='path to tensorboard')
     parser.add_argument('--data_root', type=str, default='', help='path to data root')
 
@@ -225,7 +232,15 @@ def parse_option_supervised():
         parser.add_argument('--prefix_label', action='store_true', help='append label to the beginning description')
 
     parser.add_argument('--eval_mode', type=str, default=None)
-
+    parser.add_argument('--label_pull', type=float, default=None)
+    if parser.parse_known_args()[0].label_pull is not None:
+        parser.add_argument('--word_embed_size', type=int, default=500,
+                            help='Word embedding classifier')
+        parser.add_argument('--word_embed_path', type=str, default="word_embeds",
+                            help='Where to store word embeds pickles for dataset.')
+        parser.add_argument('--use_synonyms', action='store_true', help='Use synonyms.') # TODO
+        parser.add_argument('--glove', action='store_true',
+                            help='Use of Glove embeds instead of Vico.')
     opt = parser.parse_args()
 
     if opt.dataset == 'CIFAR-FS' or opt.dataset == 'FC100':
@@ -281,13 +296,15 @@ def parse_option_supervised():
                                                                   opt.classifier,
                                                                   opt.multip_fc)
     else:
-        opt.model_name = '{}_{}_classifier_{}'.format(opt.dataset, opt.model, opt.classifier)
+        opt.model_name = '{}_{}_classifier_{}'.format(opt.dataset, 
+                                                      opt.model, 
+                                                      opt.classifier)
 
     opt.tb_folder = os.path.join(opt.tb_path, opt.model_name)
     if not os.path.isdir(opt.tb_folder):
         os.makedirs(opt.tb_folder)
 
-    opt.save_folder = os.path.join(opt.model_path, opt.model_name)
+    opt.save_folder = opt.model_path # os.path.join(opt.model_path, opt.model_name)
     if not os.path.isdir(opt.save_folder):
         os.makedirs(opt.save_folder)
 
