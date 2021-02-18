@@ -1,6 +1,8 @@
 from __future__ import print_function
 import torch
 import pickle
+import ipdb
+import numpy as np
 
 def create_model(name, n_cls, opt, vocab=None, dataset='miniImageNet'):
     from . import model_dict
@@ -46,7 +48,7 @@ def get_teacher_name(model_path):
             return segments[0] + '_' + segments[1] + '_' + segments[2]
         
 
-def get_embeds(embed_pth, vocab):
+def get_embeds(embed_pth, vocab, dim=500):
     '''
     Takes in path to the embeds and vocab (list).
     Returns a list of embeds.

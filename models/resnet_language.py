@@ -17,20 +17,8 @@ class LangPuller(nn.Module):
         
         # Retrieve novel embeds
         embed_pth = os.path.join(opt.word_embed_path, "{0}_dim{1}.pickle".format(opt.dataset, dim)) # TODO
-        with open(embed_pth, "rb") as openfile:
-            embeds = pickle.load(openfile)
-
-        novel_embeds = [0] * len(vocab_novel)
-        for (i,token) in enumerate(vocab_novel):
-            words = token.split(' ')
-            for w in words:
-                try:
-                    novel_embeds[i] += embeds[w]
-                except KeyError:
-                    novel_embeds[i] = np.zeros(dim)
-            novel_embeds[i] /= len(words)
-        self.novel_embeds = torch.cuda.FloatTensor(np.stack(novel_embeds, axis=0))
-
+        self.novel_embeds = get_embeds(embed_pth, vocab_novel).float().cuda()
+        
         # Retrieve base embeds
         if opt.use_synonyms:
             embed_pth = os.path.join(opt.word_embed_path, 
@@ -45,18 +33,7 @@ class LangPuller(nn.Module):
                                      "{0}_dim{1}.pickle".format(opt.dataset, dim)) # TODO
             base_embeds = get_embeds(embed_pth, vocab_base)
             
-#             with open(embed_pth, "rb") as openfile:
-#                 embeds = pickle.load(openfile)
-#             base_embeds = [0] * len(vocab_base)
-#             for (i,token) in enumerate(vocab_base):
-#                 words = token.split(' ')
-#                 for w in words:
-#                     try:
-#                         base_embeds[i] += embeds[w]
-#                     except KeyError:
-#                         base_embeds[i] = np.zeros(dim)
-#                 base_embeds[i] /= len(words)
-        self.base_embeds = base_embeds.cuda()
+        self.base_embeds = base_embeds.float().cuda()
         # This will be used to compute label attractors.
         self.softmax = nn.Softmax(dim=1)
         # If Glove, use the first 300 TODO
