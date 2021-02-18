@@ -21,7 +21,8 @@ from sklearn.ensemble import RandomForestClassifier
 
 from .util import accuracy, NN, normalize, image_formatter, \
 mean_confidence_interval, Cosine, get_vocabs, drop_a_dim, \
-get_optim, get_batch_cycle, freeze_backbone_weights, AverageMeter
+get_optim, get_batch_cycle, freeze_backbone_weights, \
+AverageMeter, log_episode
 
 from models.resnet_language import LangLinearClassifier, LangPuller
 
@@ -129,7 +130,8 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
         # Label pulling is a regularization towards the label attractors.
         if opt.label_pull is not None:
             lang_puller = LangPuller(opt, vocab_base, vocab_novel)
-
+            
+        
         # Validate before training. TODO
         test_acc, *_ = validate_fine_tune(query_xs, query_ys_id, net, criterion, opt)
         print('{:25} {:.4f}\n'.format("Novel incremental acc before fine-tune:",
@@ -145,6 +147,7 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
 #         while train_loss > opt.target_train_loss or epoch < opt.novel_epochs + 1:
         while train_acc < 98.:
             freeze_backbone_weights(net, opt, epoch, exclude=["classifier"])
+            net.train() # XXX ??
 #             base_weight = classifier.weight.clone().detach().requires_grad_(False)[:len(vocab_base),:] TODO
             support_xs = support_xs.cuda()
             support_ys_id = support_ys_id.cuda()
@@ -228,7 +231,6 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
         # Update meters.
         acc_base.update(acc_base_)
         acc_novel.update(test_acc.item())
-        avg_score = (acc_base_ + test_acc.item())/2
 
 
         # Little pull here.
@@ -265,34 +267,14 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
                   "Pull Running Average:",
                   np.mean(pull_running_avg)), flush=True)
 
-        print('\n{:25} {:}\n'
-              '{:25} {:}\n'
-              '{:25} {:}\n'
-              '{:25} {:.4f}\n'
-              '{:25} {:.4f}\n'
-              '{:25} {:.4f}\n'
-              '{:25} {:.4f}\n'
-              '{:25} {:.4f}\n'
-              '{:25} {:.4f}\n'.format(
-                  "Classes:",
-                  novel_labels,
-                  "Labels:",
-                  vocab_novel,
-                  "Fine-tuning epochs:",
-                  epoch-1,
-                  "Novel acc:",
-                  test_acc.item(),
-                  "Base acc:",
-                  acc_base_,
-                  "Average:",
-                  avg_score,
-                  "Runnning Base Avg:",
-                  acc_base.avg,
-                  "Running Novel Avg:",
-                  acc_novel.avg,
-                  "Running Average:",
-                  (acc_base.avg + acc_novel.avg)/2,
-                  ), flush=True)
+        # Log episode results.
+        log_episode(novel_labels,
+                    vocab_novel,
+                    epoch,
+                    test_acc.item(),
+                    acc_base_,
+                    acc_base.avg,
+                    acc_novel.avg)
         
         
 #         ######## To save preds (temporary, comment out below later) ########
@@ -332,19 +314,25 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
 def few_shot_language_incremental_test(net, ckpt, criterion, meta_valloader, base_val_loader, opt, vis=False):
     if vis:
         df = pd.DataFrame(columns=['idx', 'class', 'isbase', 'predicted', 'img'])
+        
+    # Backbone classifier should've been trained with attention.
     attention = opt.attention
     assert net.classifier.attention == attention
-    acc_novel = []
-    acc_base = []
-    running_avg = []
+    
+    # Create meters.
+    acc_novel, acc_base = [AverageMeter() for _ in range(2)]
+    
+    # Save initial backbone.
     basenet = copy.deepcopy(net).cuda()
-    print("Copied to basenet.")
+    base_weight, base_bias = basenet._get_base_weights()
+    
+    
     if basenet.classifier.multip_fc == 0: # TODO
-        print("A LARGE WARNING!!! Loaded multipfc is 0, setting it to {}!!!".format(opt.multip_fc))
-        basenet.classifier.multip_fc = nn.Parameter(torch.FloatTensor([opt.multip_fc]), requires_grad=False)
+        raise ValueError("We shouldn't use this backbone. It's multip_fc is unknown.") 
 
-    embed = basenet.classifier.embed.clone().detach().requires_grad_(False)
+    embed = basenet.classifier.embed.clone().detach().requires_grad_(False) # XXXX
 
+    # XXX
     if attention:
         if opt.lmbd_reg_transform_w:
             orig_classifier_weights = basenet.classifier.transform_W_output.clone().detach().requires_grad_(False)
@@ -355,171 +343,132 @@ def few_shot_language_incremental_test(net, ckpt, criterion, meta_valloader, bas
         orig_classifier_weights = embed @ trns if opt.lmbd_reg_transform_w else None
         print("Retrieved original classifier weights.")
 
-    base_valloader_it = iter(base_val_loader)
-    meta_valloader_it = iter(meta_valloader)
-    print("Created iterators.")
-    print("len(base_valloader_it) ", len(base_valloader_it))
-    print("len(meta_valloader_it) ", len(meta_valloader_it))
-    print("opt.neval_episodes ", opt.neval_episodes)
-#     for idx, data in enumerate(meta_valloader):
+    # Create iterators.
+    base_valloader_it = itertools.cycle(iter(base_val_loader))
+    meta_valloader_it = itertools.cycle(iter(meta_valloader))
+    
     for idx in range(opt.neval_episodes):
         print("\n**** Iteration {}/{} ****\n".format(idx, opt.neval_episodes))
-        try:
-            data = next(meta_valloader_it)
-        except StopIteration:
-            meta_valloader_it = iter(meta_valloader)
-            data = next(meta_valloader_it)
-#         ipdb.set_trace()
-        support_xs, support_ys, query_xs, query_ys = drop_a_dim(data)
-        novelimgs = query_xs.detach().numpy()
+        support_xs, support_ys, query_xs, query_ys = drop_a_dim(next(meta_valloader_it))
+        novelimgs = query_xs.detach().numpy() # for vis
 
         # Get sorted numeric labels, create a mapping that maps the order to actual label
-
         vocab_base, vocab_all, vocab_novel, orig2id = get_vocabs(base_val_loader, meta_valloader, support_ys)
-        novel_ids = np.sort(np.unique(query_ys))
+        
+        # Map the labels to their new form.
         query_ys_id = torch.LongTensor([orig2id[y] for y in query_ys])
         support_ys_id = torch.LongTensor([orig2id[y] for y in support_ys])
 
+        # Reset the network
         net = copy.deepcopy(basenet)
         classifier = net.classifier
         multip_fc = classifier.multip_fc.detach().clone().cpu().item()
-
+        
+        # Where to load the pre-saved embeddings from.
         if opt.classifier == "lang-linear":
+            embed_pth = os.path.join(opt.word_embed_path, "{0}_dim{1}.pickle".format(opt.dataset, 
+                                                                                     opt.word_embed_size))
 
-            # Create the language classifier which uses only novel class names' embeddings
-            dim = opt.word_embed_size
-            embed_pth = os.path.join(opt.word_embed_path, "{0}_dim{1}.pickle".format(opt.dataset, dim))
-            dummy_classifier = LangLinearClassifier(vocab_novel,
-                                                    embed_pth,
-                                                    dim=dim,
-                                                    cdim=640,
-                                                    bias=opt.lang_classifier_bias,
-                                                    verbose=False,
-                                                    multip_fc=multip_fc,
-                                                    attention=attention,
-                                                    transform_query_size=opt.transform_query_size) # TODO!!
 
-        else: # Description linear classifier
-
+        elif opt.classifier == "description-linear":
+            msg = "Check the classifier augmentation code in model for reading descriptions." 
+            raise NotImplementedError(msg)
             embed_pth = os.path.join(opt.description_embed_path,
                                      "{0}_{1}_layer{2}_prefix_{3}.pickle".format(opt.dataset,
                                                                                  opt.desc_embed_model,
                                                                                  opt.transformer_layer,
                                                                                  opt.prefix_label))
-            dummy_classifier = LangLinearClassifier(vocab_novel,
-                                                    embed_pth,
-                                                    cdim=640,
-                                                    dim=None,
-                                                    bias=opt.lang_classifier_bias,
-                                                    description=True,
-                                                    verbose=False,
-                                                    multip_fc=multip_fc,
-                                                    attention=attention,
-                                                    transform_query_size=opt.transform_query_size)
-
-        novel_embeds = dummy_classifier.embed.detach().cuda()
-
 
         # Update the trained classifier of the network to accommodate for the new classes
-        classifier.embed = nn.Parameter(torch.cat([embed, novel_embeds], 0),
-                                        requires_grad=False) # TODO:CHECK DIM.
-        if attention:
-            classifier.transform_W_output = nn.Parameter(torch.cat([classifier.transform_W_output, dummy_classifier.weight.detach().cuda()], 0), requires_grad=True)
+        novel_labels = np.sort(np.unique(query_ys))
+        net.classifier.augment_classifier_(vocab_novel, embed_pth)
 
         # Validate before training.
-        test_acc, test_acc_top5, test_loss, _ = validate_fine_tune(query_xs, query_ys_id, net, criterion, opt)
+        test_acc, *_ = validate_fine_tune(query_xs, query_ys_id, net, criterion, opt)
         print('{:25} {:.4f}\n'.format("Novel incremental acc before fine-tune:",test_acc.item()))
 
 
         # Evaluate base samples before updating the network
-#         acc_base_ = eval_base(net, base_val_loader, criterion, vocab_all) # where to update df for this evaluations???
+        # TODO
 
-#         print('{:25} {:.4f}\n'.format("Base incremental acc before fine-tune:",acc_base_))
-
-        # Retrieve original transform_W if regularization
-#         orig_transform_W = ckpt['model']['classifier.transform_W'] if opt.lmbd_reg_transform_w else None
-#         ipdb.set_trace()
-
+        # Optimizer
+        optimizer = get_optim(net, opt)
 
         # routine: fine-tuning for novel classes
         train_loss = 15
         epoch = 1
-
-        # optimizer
-        if opt.adam:
-            optimizer = torch.optim.Adam(net.parameters(),
-                                         lr=opt.learning_rate,
-                                         weight_decay=0.0005)
-        else:
-            optimizer = torch.optim.SGD(net.parameters(),
-                                  lr=opt.learning_rate,
-                                  momentum=opt.momentum,
-                                  weight_decay=opt.weight_decay) # TODO anything to load from ckpt?
-
-
-        while train_loss > opt.target_train_loss or epoch < opt.novel_epochs + 1:
+        train_acc = 0
+#         while train_loss > opt.target_train_loss or epoch < opt.novel_epochs + 1:
+        while train_acc < opt.target_train_acc:
             freeze_backbone_weights(net, opt, epoch)
             net.train()
-            train_acc, train_loss = fine_tune_step(epoch,
-                                                    support_xs,
-                                                    support_ys_id,
-                                                    net,
-                                                    criterion,
-                                                    optimizer,
-                                                    orig_classifier_weights,
-                                                    opt)
+            support_xs = support_xs.cuda()
+            support_ys_id = support_ys_id.cuda()
+
+            # Compute output
+            if opt.classifier in ["lang-linear", "description-linear"] and opt.attention is not None:
+                output, alphas = net(support_xs, get_alphas=True)
+                loss = criterion(output, support_ys_id) + opt.diag_reg * criterion(alphas, support_ys_id)
+            else:
+                output = net(support_xs)
+                loss = criterion(output, support_ys_id)
+              
+            # Penalize the change in base classifier weights.
+            if opt.lmbd_reg_transform_w is not None:
+                loss += net.regloss(opt.lmbd_reg_transform_w, base_weight, base_bias)
+                
+            # Train
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            with torch.no_grad():
+                acc1, acc5 = accuracy(output, support_ys_id, topk=(1,5))
+                train_acc, train_loss = acc1[0], loss.item()
+                print('=======Novel Epoch {}=======\n'
+                      'Train\t'
+                      'Loss {:10.4f}\t'
+                      'Acc@1 {:10.3f}\t'
+                      'Acc@5 {:10.3f}'.format(
+                       epoch, loss.item(), acc1[0], acc5[0]))
+            
             test_acc, test_acc_top5, test_loss, query_ys_pred = validate_fine_tune(query_xs,
                                                                                    query_ys_id,
                                                                                    net,
                                                                                    criterion,
                                                                                    opt)
+    
             if vis and idx == 0:
                 novel_info = [(idx, vocab_all[query_ys_id[i]], False, vocab_all[query_ys_pred[i]],
                                image_formatter(novelimgs[i,:,:,:]))  for i in range(len(query_ys_id))]
                 df = df.append(pd.DataFrame(novel_info, columns=df.columns), ignore_index=True)
+            
             epoch += 1
 
-        try:
-            base_batch = next(base_valloader_it)
-        except StopIteration:
-            base_valloader_it = iter(base_val_loader)
-            base_batch = next(base_valloader_it)
-
+    
         # Evaluate base samples with the updated network
-        if vis and idx == 0:
-            acc_base_ = eval_base(net, base_batch, criterion, vocab_all, df=df)
-        else:
-            acc_base_ = eval_base(net, base_batch, criterion, vocab_all)
+        base_batch = next(base_valloader_it)
+        vis_condition = (vis and idx == 0)
+        acc_base_ = eval_base(net, 
+                              base_batch, 
+                              criterion, 
+                              vocab_all = vocab_all if vis_condition else None, 
+                              df= df if vis_condition else None)
 
-        # Compute avg of base and novel.
-        avg_score = (acc_base_ + test_acc.item())/2
+        # Update meters.
+        acc_base.update(acc_base_)
+        acc_novel.update(test_acc.item())
 
-        # Update trackers.
-        acc_base.append(acc_base_)
-        acc_novel.append(test_acc.item())
-        running_avg.append(avg_score)
-
-        print('\n{:25} {:}\n'
-              '{:25} {:}\n'
-              '{:25} {:}\n'
-              '{:25} {:.4f}\n'
-              '{:25} {:.4f}\n'
-              '{:25} {:.4f}\n'
-              '{:25} {:.4f}'.format(
-                  "Novel classes are:",
-                  novel_ids,
-                  "Human labels are:",
-                  vocab_novel,
-                  "Novel training epochs:",
-                  epoch-1,
-                  "Novel incremental acc:",
-                  test_acc.item(),
-                  "Base incremental acc:",
-                  acc_base_,
-                  "Average:",
-                  avg_score,
-                  "Running Average:",
-                  np.mean(running_avg)))
+        # Log episode results.
+        log_episode(novel_labels,
+                    vocab_novel,
+                    epoch,
+                    test_acc.item(),
+                    acc_base_,
+                    acc_base.avg,
+                    acc_novel.avg)
+        
+        
 
     if vis:
         return df

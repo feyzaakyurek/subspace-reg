@@ -168,12 +168,16 @@ def main():
     else:
         raise NotImplementedError(opt.dataset)
 
-
+    # Load model if available, check bias.
+    ckpt = torch.load(opt.model_path)
+        
     # If language classifiers are used, then we'll need the embeds recorded.
     if opt.classifier in ["lang-linear", "description-linear"]:
         opt.multip_fc = ckpt['opt'].multip_fc
-        opt.diag_reg = ckpt['opt'].diag_reg
-
+        opt.diag_reg =  0.5 #ckpt['opt'].diag_reg
+        opt.lang_classifier_bias = ckpt['opt'].lang_classifier_bias
+        
+        
         # Save full dataset vocab if not available
         vocab_train = [name for name in train_loader.dataset.label2human if name != '']
         vocab_test = [name for name in meta_testloader.dataset.label2human if name != '']
@@ -199,9 +203,7 @@ def main():
         if opt.use_synonyms:
             create_and_save_synonyms(opt, vocab_train, vocab_test, vocab_val)
 
-    # Load model if available, check bias.
-
-    ckpt = torch.load(opt.model_path)
+    
 
 
 #         opt.no_linear_bias = ckpt['opt'].no_linear_bias

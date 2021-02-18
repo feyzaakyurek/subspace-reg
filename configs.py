@@ -87,11 +87,12 @@ def parse_option_eval():
         parser.add_argument('--word_embed_path', type=str, default="word_embeds",
                             help='Where to store word embeds pickles for dataset.')
         parser.add_argument('--word_embed_type', type=str, default="")
-        parser.add_argument('--lang_classifier_bias', action='store_true',
-                            help='Use of bias in lang classifier.')
-        parser.add_argument('--multip_fc', type=float, default=0.05)
+#         parser.add_argument('--lang_classifier_bias', action='store_true',
+#                             help='Use of bias in lang classifier.')
+#         parser.add_argument('--multip_fc', type=float, default=0.05) # should be read from the loaded model.
         parser.add_argument('--diag_reg', type=float, default=0.05)
-        parser.add_argument('--attention', type=str, choices=["sum","concat","context"], default=None, help='Use of attention in lang classifier.')
+        parser.add_argument('--attention', type=str, choices=["sum","concat","context"], 
+                            default=None, help='Use of attention in lang classifier.')
         parser.add_argument('--orig_alpha', type=float, default=1.0)
         parser.add_argument('--transform_query_size', type=int, default=None, help='Output size of key, query, value in attention.')
 
@@ -125,7 +126,7 @@ def parse_option_eval():
         parser.add_argument('--adam', action='store_true', help='use adam optimizer')
         parser.add_argument('--freeze_backbone_at', type=int, default=1, help='freeze backbone while updating classifier at the epoch X, epochs start at 1.')
         parser.add_argument('--lmbd_reg_transform_w',  type=float, default=None, help='regularization for the base classes.')
-        parser.add_argument('--target_train_loss',  type=float, default=0.8, help='learning rate')
+        parser.add_argument('--target_train_acc',  type=float, default=100, help='When to stop fine-tuning.')
         parser.add_argument('--saliency',  action='store_true', help='append label to the beginning description')
         parser.add_argument('--use_episodes', action='store_true', help='use exact XtarNet episodes.')
 

@@ -8,6 +8,8 @@ import os
 import pickle
 import ipdb
 
+from models.util import get_embeds
+
 class LangPuller(nn.Module):
     def __init__(self,opt, vocab_base, vocab_novel):
         super(LangPuller, self).__init__()
@@ -39,19 +41,22 @@ class LangPuller(nn.Module):
             for base_label in vocab_base:
                 base_embeds.append(label_syn_embeds[base_label])
         else:
-            embed_pth = os.path.join(opt.word_embed_path, "{0}_dim{1}.pickle".format(opt.dataset, dim)) # TODO
-            with open(embed_pth, "rb") as openfile:
-                embeds = pickle.load(openfile)
-            base_embeds = [0] * len(vocab_base)
-            for (i,token) in enumerate(vocab_base):
-                words = token.split(' ')
-                for w in words:
-                    try:
-                        base_embeds[i] += embeds[w]
-                    except KeyError:
-                        base_embeds[i] = np.zeros(dim)
-                base_embeds[i] /= len(words)
-        self.base_embeds = torch.cuda.FloatTensor(np.stack(base_embeds, axis=0))
+            embed_pth = os.path.join(opt.word_embed_path, 
+                                     "{0}_dim{1}.pickle".format(opt.dataset, dim)) # TODO
+            base_embeds = get_embeds(embed_pth, vocab_base)
+            
+#             with open(embed_pth, "rb") as openfile:
+#                 embeds = pickle.load(openfile)
+#             base_embeds = [0] * len(vocab_base)
+#             for (i,token) in enumerate(vocab_base):
+#                 words = token.split(' ')
+#                 for w in words:
+#                     try:
+#                         base_embeds[i] += embeds[w]
+#                     except KeyError:
+#                         base_embeds[i] = np.zeros(dim)
+#                 base_embeds[i] /= len(words)
+        self.base_embeds = base_embeds.cuda()
         # This will be used to compute label attractors.
         self.softmax = nn.Softmax(dim=1)
         # If Glove, use the first 300 TODO
@@ -162,7 +167,30 @@ class LangLinearClassifier(nn.Module):
             return self.transform_W_output #TODO
         else:
             return self.embed @ self.transform_W
+        
+    def augment_classifier_(self, novel_labels, embed_path):
+        base_device = self.embed.device
+        novel_embeds = get_embeds(embed_path, novel_labels).to(base_device)
+        self.embed = nn.Parameter(torch.cat([self.embed, novel_embeds], 0),
+                                  requires_grad=False)
+        
+        if self.attention is not None:
+            novel_classifier = nn.Linear(self.transform_W_output.size(1), 
+                                         len(novel_labels), 
+                                         bias=(self.bias is not None)) # TODO!!
 
+            novel_weight = novel_classifier.weight.detach()
+            augmented_weight = torch.cat([self.transform_W_output.detach(), 
+                                          novel_weight.to(base_device)], 0)
+            self.transform_W_output = nn.Parameter(augmented_weight, requires_grad=True)
+            
+            if self.bias is not None:
+                novel_bias = novel_classifier.bias.detach()
+                self.bias = torch.cat([self.bias.detach(), 
+                                       novel_bias.to(base_device)], 0)
+                
+                
+                
     def forward(self, x, get_alphas=False):
         if self.attention is not None:
             if self.transform_query_size is not None:
@@ -320,7 +348,11 @@ class ResNet(nn.Module):
         else:
             return base_weight, None
     
-    def augment_base_classifier_(self, n, novel_weight=None, novel_bias=None):
+    def augment_base_classifier_(self, 
+                                 n, 
+                                 novel_weight=None, 
+                                 novel_bias=None):
+        
         # Create classifier weights for novel classes.
         base_device = self.classifier.weight.device
         base_weight = self.classifier.weight.detach()
@@ -330,7 +362,7 @@ class ResNet(nn.Module):
             base_bias = None
             
         if novel_weight is None:
-            novel_classifier = nn.Linear(640, n, bias=(base_bias is not None)) # TODO!!
+            novel_classifier = nn.Linear(base_weight.size(1), n, bias=(base_bias is not None)) # TODO!!
             novel_weight     = novel_classifier.weight.detach()
             if base_bias is not None and novel_bias is None:
                 novel_bias = novel_classifier.bias.detach()
@@ -340,7 +372,10 @@ class ResNet(nn.Module):
             
         if base_bias is not None:
             augmented_bias = torch.cat([base_bias, novel_bias.to(base_device)])
-            self.classifier.bias   = nn.Parameter(augmented_bias, requires_grad=True)
+            self.classifier.bias = nn.Parameter(augmented_bias, requires_grad=True)
+            
+        
+            
             
     def regloss(self, lmbd, base_weight, base_bias=None):
 #         return torch.exp(pull) * self.mse(weights, inspired)

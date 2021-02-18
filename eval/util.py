@@ -145,6 +145,43 @@ def get_batch_cycle(meta_trainloader_it, meta_trainloader):
         data = next(meta_trainloader_it)
     return data
 
+def log_episode(novel_labels,
+                vocab_novel,
+                epoch,
+                novel_acc,
+                base_acc,
+                running_base,
+                running_novel):
+    avg_score = (novel_acc + base_acc) / 2
+    running_avg = (running_base + running_novel) / 2
+    print('\n{:25} {:}\n'
+          '{:25} {:}\n'
+          '{:25} {:}\n'
+          '{:25} {:.4f}\n'
+          '{:25} {:.4f}\n'
+          '{:25} {:.4f}\n'
+          '{:25} {:.4f}\n'
+          '{:25} {:.4f}\n'
+          '{:25} {:.4f}\n'.format("Classes:",
+                                  novel_labels,
+                                  "Labels:",
+                                  vocab_novel,
+                                  "Fine-tuning epochs:",
+                                  epoch-1,
+                                  "Novel acc:",
+                                  novel_acc,
+                                  "Base acc:",
+                                  base_acc,
+                                  "Average:",
+                                  avg_score,
+                                  "Runnning Base Avg:",
+                                  running_base,
+                                  "Running Novel Avg:",
+                                  running_novel,
+                                  "Running Average:",
+                                  running_avg,
+                                  ), flush=True)
+
 def validate(val_loader, model, criterion, opt):
     """One epoch validation"""
     batch_time = AverageMeter()
