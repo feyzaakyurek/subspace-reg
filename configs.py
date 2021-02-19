@@ -126,7 +126,7 @@ def parse_option_eval():
         parser.add_argument('--adam', action='store_true', help='use adam optimizer')
         parser.add_argument('--freeze_backbone_at', type=int, default=1, help='freeze backbone while updating classifier at the epoch X, epochs start at 1.')
         parser.add_argument('--lmbd_reg_transform_w',  type=float, default=None, help='regularization for the base classes.')
-        parser.add_argument('--target_train_acc',  type=float, default=100, help='When to stop fine-tuning.')
+        parser.add_argument('--target_train_loss',  type=float, default=1.0, help='When to stop fine-tuning.')
         parser.add_argument('--saliency',  action='store_true', help='append label to the beginning description')
         parser.add_argument('--use_episodes', action='store_true', help='use exact XtarNet episodes.')
 

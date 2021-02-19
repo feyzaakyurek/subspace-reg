@@ -5,31 +5,33 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:volta:1
-#SBATCH --array=1-36
+#SBATCH --array=1-2
 #SBATCH --output=dumped/%A_%a.out
 #SBATCH --error=dumped/%A_%a.err
-#SBATCH --job-name=ppullfpull-nsyn
+#SBATCH --job-name=cppullfpullnsyn
 
 
 DUMPED_PATH="/home/gridsan/akyurek/git/rfs-incremental/dumped"
-EXP_FOLDER=$DUMPED_PATH/"finetune_label_pull_pretrain_label_pull_frugal"
+EXP_FOLDER=$DUMPED_PATH/"finetune_label_pull_pretrain_label_pull_delete"
 DATA_PATH="/home/gridsan/groups/akyureklab/rfs-incremental/data"
-# BACKBONE_PATH="${DUMPED_PATH}/backbones/linear/resnet12_miniImageNet_linear_classifier_wbias/resnet12_last.pth"
-# BACKBONE_PATH="${DUMPED_PATH}/backbones/linear/resnet12_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain_classifier_linear_8075566/resnet12_last.pth"
+#BACKBONE_PATH="${DUMPED_PATH}/backbones/linear/resnet12_miniImageNet_linear_classifier_wbias/resnet12_last.pth"
+#BACKBONE_PATH="${DUMPED_PATH}/backbones/linear/resnet12_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain_classifier_linear_8075566/resnet12_last.pth"
+# export WANDB_MODE=dryrun
+
 mkdir -p $EXP_FOLDER
 
 cnt=0
 for LMBD in 0.3; do
-# for PPULL in 0.4 0.2 0.0 0.1 0.15 0.13 0.07 0.01 0.02 0.03; do #10
-for PPULL in 0.4 0.1 0.03 0.0; do #4
-for TRLOSS in 1.1 1.3 1.5 ; do #3
-for FPULL in 0.02 0.1 0.0; do #3
+for PPULL in 0.4 0.0; do #10
+# for TRLOSS in 1.1 1.2 1.35 1.0 ; do #4
+for FPULL in 0.03; do #5
 (( cnt++ ))
 if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then
     BACKBONE_PATH="${DUMPED_PATH}/backbones/linear/label_pull/no_synonyms_label_pull_${PPULL}/resnet12_last.pth"
-    EXP_NAME=lambda_${LMBD}_trloss_${TRLOSS}_fpull_${FPULL}_regularize_ppull_${PPULL}
+    EXP_NAME=nsyns_lambda_${LMBD}_fpull_${FPULL}_regularize_ppull_${PPULL}
     LOG_STDOUT="${EXP_FOLDER}/${EXP_NAME}.out"
     LOG_STDERR="${EXP_FOLDER}/${EXP_NAME}.err"
+#     wandb off
     python eval_incremental.py --model_path $BACKBONE_PATH \
                                --data_root $DATA_PATH \
                                --n_shots 5 \
@@ -38,20 +40,22 @@ if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then
                                --novel_epochs 20 \
                                --learning_rate 0.002 \
                                --use_episodes \
+                               --neval_episodes 3\
                                --freeze_backbone_at 1 \
                                --label_pull $FPULL \
                                --pulling regularize \
                                --lmbd_reg_transform_w $LMBD \
-                               --target_train_loss $TRLOSS > $LOG_STDOUT 2> $LOG_STDERR
+                               --target_train_acc 100 > $LOG_STDOUT 2> $LOG_STDERR
 fi
 done
 done
-done
+# done
 done
 
 # For debugging. 
 
 # Label pull pretrain and few-shot with label pull
+# export WANDB_MODE=dryrun
 # BACKBONE_PATH="${DUMPED_PATH}/backbones/linear/label_pull/no_synonyms_label_pull_0.4/resnet12_last.pth"
 # python eval_incremental.py --model_path $BACKBONE_PATH \
 #                            --data_root $DATA_PATH \
@@ -60,13 +64,13 @@ done
 #                            --classifier linear \
 #                            --novel_epochs 20 \
 #                            --learning_rate 0.002 \
-#                            --use_episodes \
+#                            --neval_episodes 3 \
 #                            --freeze_backbone_at 1 \
-#                            --label_pull 0.1 \
+#                            --label_pull 0.03 \
 #                            --pulling regularize \
 #                            --lmbd_reg_transform_w 0.3 \
-#                            --target_train_loss 1.1 # > ppull_deneme.out
-
+#                            --target_train_acc 1.0 # > ppull_deneme.out
+#                            --use_episodes \
 
 # # No language fine tuning few-shot
 # export DUMPED_PATH="dumped"

@@ -143,9 +143,9 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
         # Fine tuning epochs.
         train_loss = 15
         epoch = 1
-        train_acc = 0
-#         while train_loss > opt.target_train_loss or epoch < opt.novel_epochs + 1:
-        while train_acc < 98.:
+#         train_acc = 0
+        while train_loss > opt.target_train_loss or epoch < opt.novel_epochs + 1:
+#         while train_acc < 98.:
             freeze_backbone_weights(net, opt, epoch, exclude=["classifier"])
             net.train() # XXX ??
 #             base_weight = classifier.weight.clone().detach().requires_grad_(False)[:len(vocab_base),:] TODO
@@ -397,9 +397,9 @@ def few_shot_language_incremental_test(net, ckpt, criterion, meta_valloader, bas
         # routine: fine-tuning for novel classes
         train_loss = 15
         epoch = 1
-        train_acc = 0
-#         while train_loss > opt.target_train_loss or epoch < opt.novel_epochs + 1:
-        while train_acc < opt.target_train_acc:
+#         train_acc = 0
+        while train_loss > opt.target_train_loss or epoch < opt.novel_epochs + 1:
+#         while train_acc < opt.target_train_acc:
             freeze_backbone_weights(net, opt, epoch)
             net.train()
             support_xs = support_xs.cuda()

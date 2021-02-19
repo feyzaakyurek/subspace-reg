@@ -28,11 +28,15 @@ from eval.meta_eval import incremental_test, meta_hierarchical_incremental_test
 from eval.zero_eval import zero_shot_test, zero_shot_incremental_test
 from eval.language_eval import few_shot_language_incremental_test, few_shot_finetune_incremental_test
 # import wandb
-# run = wandb.init(project="lil")
+# print("!!!!! WANDB_MODE: ", os.environ['WANDB_MODE'])
+# run = wandb.init(project="lil", mode="offline")
 from configs import parse_option_eval
 
 torch.multiprocessing.set_sharing_strategy('file_system')
 def main():
+    
+    
+    
     opt = parse_option_eval()
 
     # Add git commit hash
@@ -329,8 +333,8 @@ def main():
         print('val_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base[0], base[1], val_time))
         print('val_acc_average: {:.4f}'.format(avg_score))
 #         run.log({
-#            'val_acc_novel_avg': novel[0],
-#            'val_acc_base_avg': base[0],
+#            'val_acc_novel_avg': novel,
+#            'val_acc_base_avg': base,
 #            'val_acc_avg_both': avg_score})
 
         start = time.time()
@@ -347,8 +351,8 @@ def main():
         print('test_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base[0], base[1], test_time))
         print('test_acc_average: {:.4f}'.format(avg_score))
 #         run.log({
-#            'test_acc_novel_avg': novel[0],
-#            'test_acc_base_avg': base[0],
+#            'test_acc_novel_avg': novel,
+#            'test_acc_base_avg': base,
 #            'test_acc_avg_both': avg_score})
     elif opt.eval_mode == "few-shot-incremental-language-pretrain-linear-tune":
         assert opt.classifier in ["lang-linear", "description-linear"]
