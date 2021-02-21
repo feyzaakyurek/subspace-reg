@@ -106,6 +106,8 @@ def main():
         if opt.label_pull is not None:
             lang_puller = LangPuller(opt, vocab_train, vocab_train)
             vocab = None
+        else:
+            lang_puller = None
         
     else:
         vocab = None
