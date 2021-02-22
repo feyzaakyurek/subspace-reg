@@ -34,9 +34,9 @@ from configs import parse_option_eval
 
 torch.multiprocessing.set_sharing_strategy('file_system')
 def main():
-    
-    
-    
+
+
+
     opt = parse_option_eval()
 
     # Add git commit hash
@@ -174,14 +174,15 @@ def main():
 
     # Load model if available, check bias.
     ckpt = torch.load(opt.model_path)
-        
+
     # If language classifiers are used, then we'll need the embeds recorded.
     if opt.classifier in ["lang-linear", "description-linear"]:
         opt.multip_fc = ckpt['opt'].multip_fc
-        opt.diag_reg =  0.5 #ckpt['opt'].diag_reg
+        if opt.diag_reg is None:
+            opt.diag_reg = ckpt['opt'].diag_reg
         opt.lang_classifier_bias = ckpt['opt'].lang_classifier_bias
-        
-        
+
+
         # Save full dataset vocab if not available
         vocab_train = [name for name in train_loader.dataset.label2human if name != '']
         vocab_test = [name for name in meta_testloader.dataset.label2human if name != '']
@@ -207,7 +208,7 @@ def main():
         if opt.use_synonyms:
             create_and_save_synonyms(opt, vocab_train, vocab_test, vocab_val)
 
-    
+
 
 
 #         opt.no_linear_bias = ckpt['opt'].no_linear_bias
