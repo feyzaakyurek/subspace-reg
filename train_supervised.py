@@ -101,15 +101,17 @@ def main():
 
         if opt.classifier == "description-linear":
             create_and_save_descriptions(opt, vocab)
-        
+
         vocab = vocab_train
         if opt.label_pull is not None:
             lang_puller = LangPuller(opt, vocab_train, vocab_train)
             vocab = None
-        
+        else:
+            lang_puller = None
+
     else:
         vocab = None
-        
+
 
     # model
     model = create_model(opt.model, n_cls, opt, vocab=vocab)
@@ -217,7 +219,7 @@ def train(epoch, train_loader, model, criterion, optimizer, opt, lang_puller=Non
             output = model(input)
             loss = criterion(output, target)
         if opt.label_pull is not None:
-            penalty = lang_puller.loss1(opt.label_pull, 
+            penalty = lang_puller.loss1(opt.label_pull,
                                         lang_puller(model.classifier.weight),
                                         model.classifier.weight)
             loss += penalty

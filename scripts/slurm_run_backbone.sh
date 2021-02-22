@@ -3,9 +3,9 @@
 #SBATCH --time=15-00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=10
+#SBATCH --cpus-per-task=5
 #SBATCH --gres=gpu:volta:1
-#SBATCH --array=1-2 XXX
+#SBATCH --array=1-6
 #SBATCH --output=dumped/%A_%a.out
 #SBATCH --error=dumped/%A_%a.err
 #SBATCH --job-name=attreg_back_query_sizes
@@ -20,22 +20,22 @@
 
 # Create the combinations of params for each array task,
 # and save them to a temp params file.
-# DUMPED_PATH="/home/gridsan/eakyurek/gitother/rfs-incremental/dumped/backbones/c-x-concat/size_experiments"
-# DATA_PATH="/home/gridsan/eakyurek/akyureklab_shared/rfs-incremental/data"
-# WORD_EMBEDS="/home/gridsan/eakyurek/akyureklab_shared/rfs-incremental/word_embeds"
+DUMPED_PATH="dumped/backbones/c-x-concat/"
+DATA_PATH="/home/gridsan/eakyurek/akyureklab_shared/rfs-incremental/data"
+WORD_EMBEDS="/home/gridsan/eakyurek/akyureklab_shared/rfs-incremental/word_embeds"
 
 
 cnt=0
-for MULTIPFC in 0.075 0.01; do
+for MULTIPFC in 0.075 0.05 0.01; do
 for DIAG_REG in 0.05 0.075; do
-for QUERY_SIZE in 300 400 500 750; do
-(( cnt++ ))
+#for QUERY_SIZE in 300 750; do
+cnt=$((cnt+1))
 if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then
 #     echo "${MULTIPFC} ${DIAG_REG}"
-    EXP_NAME=attention_concat_multipfc_${MULTIPFC}_diagreg_${DIAG_REG}_querysize_${QUERY_SIZE}
+    EXP_NAME=simple_attention_concat_multipfc_${MULTIPFC}_diagreg_${DIAG_REG}_noquery
     EXP_FOLDER=$DUMPED_PATH/$EXP_NAME
     mkdir -p $EXP_FOLDER
-    LOG_STDOUT="${DUMPED_PATH}/${EXP_NAME}_${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.out"
+    LOG_STDOUT="$EXP_FOLDER/eval.log"
     python -u train_supervised.py --trial pretrain \
                                   --model_path $EXP_FOLDER  \
                                   --data_root data \
@@ -43,12 +43,11 @@ if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then
                                   --data_root $DATA_PATH \
                                   --classifier lang-linear \
                                   --attention concat \
-                                  --transform_query_size $QUERY_SIZE \
                                   --diag_reg $DIAG_REG \
                                   --word_embed_path $WORD_EMBEDS &> $LOG_STDOUT
 
 fi
-done
+#done
 done
 done
 
