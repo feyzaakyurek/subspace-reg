@@ -34,13 +34,12 @@ from configs import parse_option_eval
 
 torch.multiprocessing.set_sharing_strategy('file_system')
 def main():
-    
-    
-    
     opt = parse_option_eval()
 
     # Add git commit hash
-    process = subprocess.Popen(['git', 'rev-parse', '--short', 'HEAD'], shell=False, stdout=subprocess.PIPE)
+    process = subprocess.Popen(['git', 'rev-parse', '--short', 'HEAD'], 
+                               shell=False, 
+                               stdout=subprocess.PIPE)
     git_head_hash = process.communicate()[0].strip()
     opt.git_head_hash = git_head_hash.decode()
 

@@ -88,7 +88,8 @@ def main():
 
     else:
         raise NotImplementedError(opt.dataset)
-
+    
+    lang_puller = None
     if opt.classifier in ["lang-linear", "description-linear"] or opt.label_pull is not None:
         # Save full dataset vocab if not available
         vocab_train = [name for name in train_loader.dataset.label2human if name != '']
@@ -106,8 +107,6 @@ def main():
         if opt.label_pull is not None:
             lang_puller = LangPuller(opt, vocab_train, vocab_train)
             vocab = None
-        else:
-            lang_puller = None
         
     else:
         vocab = None
