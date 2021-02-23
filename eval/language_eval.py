@@ -147,7 +147,7 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
         while train_loss > opt.target_train_loss or epoch < opt.novel_epochs + 1:
 #         while train_acc < 98.:
             freeze_backbone_weights(net, opt, epoch, exclude=["classifier"])
-            net.train() # XXX ??
+#             net.train() # XXX ??
 #             base_weight = classifier.weight.clone().detach().requires_grad_(False)[:len(vocab_base),:] TODO
             support_xs = support_xs.cuda()
             support_ys_id = support_ys_id.cuda()
