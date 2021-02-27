@@ -60,8 +60,7 @@ def eval_base(net, base_batch, criterion, vocab_all=None, df=None, return_preds=
     with torch.no_grad():
         *_, input, target = base_batch
         input = input.squeeze(0).cuda()
-        target = target.squeeze(0).cuda()
-
+        target = target.squeeze(0).cuda().long()
         output = net(input) 
         loss = criterion(output, target)
         
@@ -98,6 +97,12 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
     basenet = copy.deepcopy(net).cuda()
     base_weight, base_bias = basenet._get_base_weights()
     
+    # For tieredImageNet we cut the last 151 rows of last linear layer.
+    if opt.dataset == "tieredImageNet" and opt.classifier == "linear":
+        base_weight = base_weight[:200,:]
+        if base_bias is not None:
+            base_bias = base_bias[:200]
+    
     # Loaders for fine tuning and testing.
     base_valloader_it = itertools.cycle(iter(base_val_loader))
     meta_valloader_it = itertools.cycle(iter(meta_valloader))
@@ -113,7 +118,6 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
         
         # Get sorted numeric labels, create a mapping that maps the order to actual label
         novel_labels = np.sort(np.unique(query_ys)) # true labels of novel samples.
-#         orig2id = dict(zip(novel_labels, len(vocab_base) + np.arange(len(novel_labels))))
         
         # Map the labels to their new form.
         query_ys_id = torch.LongTensor([orig2id[y] for y in query_ys])
@@ -163,14 +167,19 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
             
             # Penalize the change in base classifier weights.
             if opt.lmbd_reg_transform_w is not None:
-                loss += net.regloss(opt.lmbd_reg_transform_w, base_weight, base_bias)
+                reg1 = net.regloss(opt.lmbd_reg_transform_w, 
+                                  base_weight, base_bias)
+#                 print("LMBD REG: ", reg1.item())
+                loss += reg1
 
 
             if opt.label_pull is not None and opt.pulling == "regularize":
-                loss += lang_puller.loss1(opt.label_pull, 
+                reg = lang_puller.loss1(opt.label_pull, 
                                             lang_puller(base_weight),
                                             net.classifier.weight[len(vocab_base):,:])
-
+#                 print("PULL REG: ", reg.item())
+                loss += reg
+        
             # Train
             optimizer.zero_grad()
             loss.backward()
@@ -179,12 +188,13 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
             with torch.no_grad():
                 acc1, acc5 = accuracy(output, support_ys_id, topk=(1,5))
                 train_acc, train_loss = acc1[0], loss.item()
-                print('=======Novel Epoch {}=======\n'
-                      'Train\t'
-                      'Loss {:10.4f}\t'
-                      'Acc@1 {:10.3f}\t'
-                      'Acc@5 {:10.3f}'.format(
-                       epoch, loss.item(), acc1[0], acc5[0]))
+                if epoch % 10 == 0:
+                    print('=======Novel Epoch {}=======\n'
+                          'Train\t'
+                          'Loss {:10.4f}\t'
+                          'Acc@1 {:10.3f}\t'
+                          'Acc@5 {:10.3f}'.format(
+                           epoch, loss.item(), acc1[0], acc5[0]))
                 
 
 

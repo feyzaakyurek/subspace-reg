@@ -17,6 +17,7 @@ class LangPuller(nn.Module):
         
         # Retrieve novel embeds
         embed_pth = os.path.join(opt.word_embed_path, "{0}_dim{1}.pickle".format(opt.dataset, dim)) # TODO
+        print("Creating lang puller.")
         self.novel_embeds = get_embeds(embed_pth, vocab_novel).float().cuda()
         
         # Retrieve base embeds
@@ -222,6 +223,8 @@ class ResNet(nn.Module):
         self.dropout = nn.Dropout(p=1 - self.keep_prob, inplace=False)
         self.drop_rate = drop_rate
         self.vocab = vocab
+        self.mse1 = nn.MSELoss("sum")
+        self.mse2 = nn.MSELoss("sum")
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='leaky_relu')
@@ -343,7 +346,7 @@ class ResNet(nn.Module):
             novel_weight     = novel_classifier.weight.detach()
             if base_bias is not None and novel_bias is None:
                 novel_bias = novel_classifier.bias.detach()
-
+        
         augmented_weight = torch.cat([base_weight, novel_weight.to(base_device)], 0)
         self.classifier.weight = nn.Parameter(augmented_weight, requires_grad=True)
             
@@ -351,16 +354,30 @@ class ResNet(nn.Module):
             augmented_bias = torch.cat([base_bias, novel_bias.to(base_device)])
             self.classifier.bias = nn.Parameter(augmented_bias, requires_grad=True)
             
-        
+    def cut_last_layer(self, n):
+        current_size = self.classifier.weight.size(0)
+        self.num_classes = current_size - n
+        self.classifier.weight = nn.Parameter(self.classifier.weight[:self.num_classes,:],
+                                              requires_grad=True)
+        if self.classifier.bias is not None:
+            self.classifier.bias = nn.Parameter(self.classifier.bias[:self.num_classes],
+                                                requires_grad=True)
             
             
     def regloss(self, lmbd, base_weight, base_bias=None):
-#         return torch.exp(pull) * self.mse(weights, inspired)
-        reg = lmbd * torch.norm(self.classifier.weight[:base_weight.size(0),:] - base_weight) #**2??
+        current = self.classifier.weight[:base_weight.size(0),:]
+        reg = lmbd * torch.norm(current - base_weight) 
+#         reg = np.exp(lmbd) * self.mse1(current, base_weight)
+#         ipdb.set_trace()
         if base_bias is not None:
-            reg += lmbd * torch.norm(self.classifier.bias[:base_weight.size(0)] - base_bias)**2
+            current_bias = self.classifier.bias[:base_weight.size(0)]
+            reg = lmbd * torch.norm(current_bias - base_bias) 
+#             reg +=  np.exp(lmbd) * self.mse2(current_bias, base_bias)
         return reg
-    
+        #reg = lmbd * torch.norm(self.classifier.weight[:base_weight.size(0),:] - base_weight) #**2??
+        
+        
+        
 class BasicBlock(nn.Module):
     expansion = 1
 

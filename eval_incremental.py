@@ -85,17 +85,6 @@ def main():
             train_loader = DataLoader(ImageNet(args=opt, partition='train', transform=train_trans), #FIXME: use train
                                   batch_size=64, shuffle=True, drop_last=True,
                                   num_workers=opt.num_workers)
-#             base_val_loader = DataLoader(ImageNet(args=opt, partition='val', transform=test_trans),
-#                                          batch_size=opt.test_base_batch_size // 2,
-#                                          shuffle=True,
-#                                          drop_last=False,
-#                                          num_workers=opt.num_workers // 2)
-
-#             base_test_loader = DataLoader(ImageNet(args=opt, partition='test', transform=test_trans),
-#                                           batch_size=opt.test_base_batch_size // 2,
-#                                           shuffle=True,
-#                                           drop_last=False,
-#                                           num_workers=opt.num_workers // 2)
 
             base_test_loader = DataLoader(MetaImageNet(args=opt, partition='test',
                                                   train_transform=train_trans,
@@ -135,19 +124,17 @@ def main():
         train_trans, test_trans = transforms_test_options[opt.transform]
 
 
-        base_test_loader = DataLoader(MetaImageNet(args=opt, partition='test',
+        base_test_loader = DataLoader(MetaTieredImageNet(args=opt, partition='test',
                                       train_transform=train_trans,
                                       test_transform=test_trans,
-                                      fix_seed=True,
-                                      pretrain=True),
+                                      fix_seed=True, super_partition='train'),
                          batch_size=opt.test_batch_size, shuffle=True, drop_last=False,
                          num_workers=opt.num_workers)
 
-        base_val_loader = DataLoader(MetaImageNet(args=opt, partition='val',
+        base_val_loader = DataLoader(MetaTieredImageNet(args=opt, partition='val',
                                                   train_transform=train_trans,
                                                   test_transform=test_trans,
-                                                  fix_seed=True,
-                                                  pretrain=True),
+                                                  fix_seed=True, super_partition='train'),
                                      batch_size=opt.test_batch_size, shuffle=True, drop_last=False,
                                      num_workers=opt.num_workers)
 
@@ -197,7 +184,7 @@ def main():
     # This is another scenario in which we'll need the embeds.
     if opt.label_pull is not None:
 #         ipdb.set_trace()
-        vocab_train = [name for name in train_loader.dataset.label2human if name != '']
+        vocab_train = [name for name in base_test_loader.dataset.label2human if name != '']
         vocab_test = [name for name in meta_testloader.dataset.label2human if name != '']
         vocab_val = [name for name in meta_valloader.dataset.label2human if name != '']
         vocab_all = vocab_train + vocab_test + vocab_val
@@ -228,11 +215,16 @@ def main():
 
     model = create_model(opt.model, n_cls, opt, vocab=vocab, dataset=opt.dataset)
     print("Loading model...")
-    try:
-        model.load_state_dict(ckpt['model'])
-    except Exception as e:
-        print(e)
-        model.load_state_dict(ckpt['model'], strict=False)
+    model.load_state_dict(ckpt['model'])
+    
+    if opt.dataset == "tieredImageNet" and opt.classifier == "linear":
+        model.cut_last_layer(151)
+    
+#     try:
+#         model.load_state_dict(ckpt['model'])
+#     except Exception as e:
+#         print(e)
+#         model.load_state_dict(ckpt['model'], strict=False)
 
     if torch.cuda.is_available():
         model = model.cuda()
@@ -396,6 +388,8 @@ def main():
 
         start = time.time()
         opt.split = "val"
+        original_nepisodes = opt.neval_episodes
+        opt.neval_episodes = 300
         novel, base = few_shot_finetune_incremental_test(model,
                                                          ckpt,
                                                          criterion,
@@ -421,7 +415,7 @@ def main():
         if not opt.track_weights and not opt.track_label_inspired_weights:
             start = time.time()
             opt.split = "test" # TODO: run only for best val.
-
+            opt.neval_episodes = original_nepisodes
             novel, base = few_shot_finetune_incremental_test(model,
                                                              ckpt,
                                                              criterion,

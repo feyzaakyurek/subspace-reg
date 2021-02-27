@@ -3,6 +3,7 @@ import torch
 import pickle
 import ipdb
 import numpy as np
+import re
 
 def create_model(name, n_cls, opt, vocab=None, dataset='miniImageNet'):
     from . import model_dict
@@ -48,7 +49,7 @@ def get_teacher_name(model_path):
             return segments[0] + '_' + segments[1] + '_' + segments[2]
         
 
-def get_embeds(embed_pth, vocab, dim=500):
+def get_embeds(embed_pth, vocab, dim=500, cdim=640):
     '''
     Takes in path to the embeds and vocab (list).
     Returns a list of embeds.
@@ -56,13 +57,21 @@ def get_embeds(embed_pth, vocab, dim=500):
     with open(embed_pth, "rb") as openfile:
         embeds_ = pickle.load(openfile)
     embeds = [0] * len(vocab)
+    
+    # find mean embed
+    mean_embed = 0
+    for val in embeds_.values(): 
+        mean_embed += val
+    mean_embed = mean_embed / len(embeds_) # sth like zero actually.
+ 
     for (i,token) in enumerate(vocab):
-        words = token.split(' ')
+        words = re.split('\W+', token)
+        words = list(filter(lambda a: a != "", words))
         for w in words:
             try:
                 embeds[i] += embeds_[w]
             except KeyError:
-                embeds[i] = np.zeros(dim)
+                embeds[i] = mean_embed
         embeds[i] /= len(words)
         
     return torch.stack([torch.from_numpy(e) for e in embeds], 0)
