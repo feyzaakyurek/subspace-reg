@@ -38,8 +38,6 @@ srun python -u train_supervised.py --trial pretrain \
                               --classifier linear &> $LOG_STDOUT
                               
                 
-
-<<<<<<< HEAD
 # EXP_NAME=bias_false
 # EXP_FOLDER=$BACKBONES_FOLDER/$EXP_NAME
 # mkdir -p $EXP_FOLDER
