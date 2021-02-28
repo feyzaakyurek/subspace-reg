@@ -5,52 +5,65 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=10
 #SBATCH --gres=gpu:volta:1
-#SBATCH --array=1-2 XXX
-#SBATCH --output=dumped/%A_%a.out
-#SBATCH --error=dumped/%A_%a.err
-#SBATCH --job-name=attreg_back_query_sizes
+#SBATCH --output=dumped/%j.out
+#SBATCH --error=dumped/%j.err
+#SBATCH --job-name=tiered-wbias
 
 
 
-# Create the combinations of params for each array task,
-# and save them to a temp params file.
-# DUMPED_PATH="/home/gridsan/akyurek/git/rfs-incremental/dumped/backbones/"
+DUMPED_PATH="/home/gridsan/akyurek/git/rfs-incremental/dumped"
 # DATA_PATH="/home/gridsan/groups/akyureklab/rfs-incremental/data"
-# EXP_FOLDER=${DUMPED_PATH}/"attention_concat_smallkey"
-
-# Create the combinations of params for each array task,
-# and save them to a temp params file.
-# DUMPED_PATH="/home/gridsan/eakyurek/gitother/rfs-incremental/dumped/backbones/c-x-concat/size_experiments"
-# DATA_PATH="/home/gridsan/eakyurek/akyureklab_shared/rfs-incremental/data"
-# WORD_EMBEDS="/home/gridsan/eakyurek/akyureklab_shared/rfs-incremental/word_embeds"
+BACKBONES_FOLDER=${DUMPED_PATH}/backbones/tieredImageNet/linear
+mkdir -p $BACKBONES_FOLDER
 
 
-cnt=0
-for MULTIPFC in 0.075 0.01; do
-for DIAG_REG in 0.05 0.075; do
-for QUERY_SIZE in 300 400 500 750; do
-(( cnt++ ))
-if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then
-#     echo "${MULTIPFC} ${DIAG_REG}"
-    EXP_NAME=attention_concat_multipfc_${MULTIPFC}_diagreg_${DIAG_REG}_querysize_${QUERY_SIZE}
-    EXP_FOLDER=$DUMPED_PATH/$EXP_NAME
-    mkdir -p $EXP_FOLDER
-    LOG_STDOUT="${DUMPED_PATH}/${EXP_NAME}_${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.out"
-    python -u train_supervised.py --trial pretrain \
-                                  --model_path $EXP_FOLDER  \
-                                  --data_root data \
-                                  --multip_fc $MULTIPFC \
-                                  --data_root $DATA_PATH \
-                                  --classifier lang-linear \
-                                  --attention concat \
-                                  --transform_query_size $QUERY_SIZE \
-                                  --diag_reg $DIAG_REG \
-                                  --word_embed_path $WORD_EMBEDS &> $LOG_STDOUT
+EXP_NAME=bias_true
+EXP_FOLDER=$BACKBONES_FOLDER/$EXP_NAME
+mkdir -p $EXP_FOLDER
+LOG_STDOUT="${EXP_FOLDER}/log.out"
+srun python -u train_supervised.py --trial pretrain \
+                              --model_path $EXP_FOLDER  \
+                              --data_root data \
+                              --epochs 60 \
+                              --augment_pretrain_wtrainb \
+                              --lr_decay_epochs "30,45" \
+                              --dataset tieredImageNet \
+                              --classifier linear &> $LOG_STDOUT
+                              
+                
 
-fi
-done
-done
-done
+# EXP_NAME=bias_false
+# EXP_FOLDER=$BACKBONES_FOLDER/$EXP_NAME
+# mkdir -p $EXP_FOLDER
+# LOG_STDOUT="${EXP_FOLDER}/log.out"
+# python -u train_supervised.py --trial pretrain \
+#                               --model_path $EXP_FOLDER  \
+#                               --data_root data \
+#                               --no_linear_bias \
+#                               --data_root $DATA_PATH \
+#                               --classifier linear &> $LOG_STDOUT
+                              
+                              
+                              
+                              
+                              
+
+# cnt=0
+# for BIAS in 0.05 0.075 0.01; do
+# (( cnt++ ))
+# if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then
+#     EXP_NAME=multipfc_${MULTIPFC}
+#     EXP_FOLDER=$BACKBONES_FOLDER/$EXP_NAME
+#     mkdir -p $EXP_FOLDER
+#     LOG_STDOUT="${DUMPED_PATH}/${EXP_NAME}_${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.out"
+#     python -u train_supervised.py --trial pretrain \
+#                                   --model_path $EXP_FOLDER  \
+#                                   --data_root data \
+#                                   --data_root $DATA_PATH \
+#                                   --classifier linear &> $LOG_STDOUT
+
+# fi
+# done
 
 # --word_embed_type ".random" \
 
