@@ -9,6 +9,7 @@ import argparse
 from transformers import AutoTokenizer, AutoModelForMaskedLM
 from nltk.corpus import wordnet
 from PyDictionary import PyDictionary
+import re
 
 class LabelSmoothing(nn.Module):
     """
@@ -64,8 +65,10 @@ def create_and_save_embeds(opt, vocab):
 
     words = []
     for token in vocab:
-        words = words + token.split(' ')
+        words = words + re.split('\W+', token)
 
+    words = list(filter(lambda a: a != "", words))
+    
     embed_pth = os.path.join(word_embeds, embed_pth)
     if os.path.exists(embed_pth):
         print("Found {}.".format(embed_pth))
@@ -89,6 +92,9 @@ def create_and_save_embeds(opt, vocab):
         print("Pickled.")
 
 def create_and_save_synonyms(opt, vocab_train, vocab_test, vocab_val):
+    assert opt.dataset == "miniImageNet"
+    # Not implemented for tiered yet. See re example above.
+    
     # For now save only the base.
     word_embeds = opt.word_embed_path
     dim = opt.word_embed_size
