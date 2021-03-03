@@ -24,7 +24,7 @@ mean_confidence_interval, Cosine, get_vocabs, drop_a_dim, \
 get_optim, get_batch_cycle, freeze_backbone_weights, \
 AverageMeter, log_episode
 
-from models.resnet_language import LangLinearClassifier, LangPuller
+from models.resnet_language import LangLinearClassifier, LangPuller, Pusher
 
 import pandas as pd
 from PIL import Image
@@ -131,6 +131,11 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
         if opt.label_pull is not None:
             lang_puller = LangPuller(opt, vocab_base, vocab_novel)
             
+        # Push away from the closest base classifier weight.
+        if opt.push_away is not None:
+            assert base_bias is None
+            pusher = Pusher(opt, base_weight)
+            
         
         # Validate before training. TODO
         test_acc, *_ = validate_fine_tune(query_xs, query_ys_id, net, criterion, opt)
@@ -167,9 +172,18 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
 
 
             if opt.label_pull is not None and opt.pulling == "regularize":
-                loss += lang_puller.loss1(opt.label_pull, 
+                reg = lang_puller.loss1(opt.label_pull, 
                                             lang_puller(base_weight),
                                             net.classifier.weight[len(vocab_base):,:])
+                print("PULL: ", reg.item())
+                loss += reg
+                
+                
+            if opt.push_away is not None:
+                reg = pusher.loss1(opt.push_away, 
+                                     net.classifier.weight[len(vocab_base):,:])
+                print("PUSH: ", reg.item())
+                loss += reg
 
             # Train
             optimizer.zero_grad()

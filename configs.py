@@ -96,7 +96,7 @@ def parse_option_eval():
         parser.add_argument('--orig_alpha', type=float, default=1.0)
         parser.add_argument('--transform_query_size', type=int, default=None, help='Output size of key, query, value in attention.')
 
-    parser.add_argument('--label_pull', type=float, default=None)
+    
     if parser.parse_known_args()[0].eval_mode in ["few-shot-incremental-fine-tune"]:
         parser.add_argument('--word_embed_size', type=int, default=500,
                             help='Word embedding classifier')
@@ -104,6 +104,8 @@ def parse_option_eval():
                             help='Where to store word embeds pickles for dataset.')
         parser.add_argument('--glove', action='store_true',
                             help='Use of Glove embeds instead of Vico.')
+        parser.add_argument('--label_pull', type=float, default=None)
+        parser.add_argument('--push_away', type=float, default=None)
 
 
         if parser.parse_known_args()[0].label_pull is not None:

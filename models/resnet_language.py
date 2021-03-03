@@ -10,6 +10,30 @@ import ipdb
 
 from models.util import get_embeds
 
+class Pusher:
+    def __init__(self, opt, base_weight):
+        self.base_weight = base_weight # numbase X cdim
+        self.cos = nn.CosineSimilarity(dim=1, eps=1e-6)
+        
+    def loss1(self, push_away, novel_weight):
+        
+        # Find a row in base_weight that is closest to each of novel_weight
+        num_base = self.base_weight.size(0)
+        num_novel = novel_weight.size(0)
+        base_device = self.base_weight.device
+                
+        mask = torch.zeros((num_novel,num_base)).to(base_device)
+        for i,novel in enumerate(novel_weight):
+            similarity = self.cos(novel.repeat(num_base, 1), 
+                                  self.base_weight)    
+            closest = torch.argmax(similarity) # size num novel classes
+            mask[i,closest] = 1.0
+
+        selected = mask @ self.base_weight # numnovel x cdim
+        reg = -push_away * torch.norm(selected - novel_weight)
+        return reg
+
+        
 class LangPuller(nn.Module):
     def __init__(self,opt, vocab_base, vocab_novel):
         super(LangPuller, self).__init__()

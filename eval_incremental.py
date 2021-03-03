@@ -398,6 +398,8 @@ def main():
 
         start = time.time()
         opt.split = "val"
+        original_nepisodes = opt.neval_episodes
+        opt.neval_episodes = 300
         novel, base = few_shot_finetune_incremental_test(model,
                                                          ckpt,
                                                          criterion,
@@ -423,7 +425,7 @@ def main():
         if not opt.track_weights and not opt.track_label_inspired_weights:
             start = time.time()
             opt.split = "test" # TODO: run only for best val.
-
+            opt.neval_episodes = original_nepisodes
             novel, base = few_shot_finetune_incremental_test(model,
                                                              ckpt,
                                                              criterion,
