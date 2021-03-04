@@ -8,7 +8,7 @@
 #SBATCH --array=1-3
 #SBATCH --output=dumped/%A_%a.out
 #SBATCH --error=dumped/%A_%a.err
-#SBATCH --job-name=tiered_5ft
+#SBATCH --job-name=tiered_5ftmore
 
 
 DUMPED_PATH="/home/gridsan/akyurek/git/rfs-incremental/dumped"
@@ -18,8 +18,8 @@ BACKBONE_PATH="${DUMPED_PATH}/backbones/tieredImageNet/linear/bias_false/resnet1
 mkdir -p $EXP_FOLDER
 
 cnt=0
-for TRLOSS in 0.5; do
-for LMBD in 0.5 1.0 2.0; do
+for TRLOSS in 0.4; do
+for LMBD in 0.3 0.5 1.0; do
 for LR in 0.001; do
 (( cnt++ ))
 if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then

@@ -5,46 +5,43 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:volta:1
-#SBATCH --array=1-24
+#SBATCH --array=1-1
 #SBATCH --output=dumped/%A_%a.out
 #SBATCH --error=dumped/%A_%a.err
-#SBATCH --job-name=pull_1shot
+#SBATCH --job-name=tiered_1equrandom
 
 
 DUMPED_PATH="/home/gridsan/akyurek/git/rfs-incremental/dumped"
-EXP_FOLDER=$DUMPED_PATH/"1shot/finetune_label_pull_randomvsword"
-DATA_PATH="/home/gridsan/groups/akyureklab/rfs-incremental/data"
-# # BACKBONE_PATH="${DUMPED_PATH}/backbones/linear/resnet12_miniImageNet_linear_classifier_wbias/resnet12_last.pth"
-BACKBONE_PATH="${DUMPED_PATH}/backbones/linear/resnet12_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain_classifier_linear_8075566/resnet12_last.pth"
-
+EXP_FOLDER=$DUMPED_PATH/"tiered/finetune_1shot_label_pull_random"
+DATA_PATH="/home/gridsan/akyurek/git/rfs-incremental/data"
+BACKBONE_PATH="${DUMPED_PATH}/backbones/tieredImageNet/linear/bias_false/resnet12_last.pth"
 mkdir -p $EXP_FOLDER
 
 cnt=0
-for LMBD in 0.05 0.2; do
-for TRLOSS in 0.3 0.5 0.7; do
-for EMBED in "word_embeds" "random_embeds"; do
-for PULL in 0.01 0.03; do
-for LR in 0.003; do
+for LMBD in 0.3; do
+for TRLOSS in 1.5; do
+for PULL in 0.3; do
+for LR in 0.002; do
 (( cnt++ ))
 if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then
-    EXP_NAME=${EMBED}_lambda_${LMBD}_trloss_${TRLOSS}_pull_${PULL}_lr_${LR}
+    EXP_NAME=lambda_${LMBD}_trloss_${TRLOSS}_pull_${PULL}_lr_${LR}_${SLURM_ARRAY_TASK_ID}
     LOG_STDOUT="${EXP_FOLDER}/${EXP_NAME}.out"
     LOG_STDERR="${EXP_FOLDER}/${EXP_NAME}.err"
     python eval_incremental.py --model_path $BACKBONE_PATH \
                                --data_root $DATA_PATH \
                                --n_shots 1 \
+                               --dataset tieredImageNet \
                                --eval_mode few-shot-incremental-fine-tune \
                                --classifier linear \
-                               --novel_epochs 20 \
+                               --novel_epochs 10 \
                                --learning_rate $LR \
-                               --word_embed_path $EMBED \
+                               --word_embed_path "random_embeds" \
                                --freeze_backbone_at 1 \
                                --label_pull $PULL \
                                --pulling regularize \
                                --lmbd_reg_transform_w $LMBD \
                                --target_train_loss $TRLOSS > $LOG_STDOUT 2> $LOG_STDERR
 fi
-done
 done
 done
 done
