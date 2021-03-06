@@ -46,6 +46,7 @@ def validate_fine_tune(query_xs, query_ys_id, net, criterion, opt):
             # measure accuracy and record loss
             acc1, acc5 = accuracy(output, query_ys_id, topk=(1, 5))
             query_ys_pred = torch.argmax(output, dim=1).detach().cpu().numpy()
+#             if opt.verbose:
             print('Test \t'
                   'Loss {:10.4f}\t'
                   'Acc@1 {:10.3f}\t'
@@ -80,7 +81,7 @@ def eval_base(net, base_batch, criterion, vocab_all=None, df=None, return_preds=
         
     return np.mean(acc_base_)
 
-def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, base_val_loader, opt,  vis=False):
+def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, base_val_loader, opt,  vis=False, base_support_loader=None):
     if vis:
         df = pd.DataFrame(columns=['idx', 'class', 'isbase', 'predicted', 'img'])
     if opt.track_weights:
@@ -101,13 +102,21 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
     # Loaders for fine tuning and testing.
     base_valloader_it = itertools.cycle(iter(base_val_loader))
     meta_valloader_it = itertools.cycle(iter(meta_valloader))
+    if base_support_loader is not None:
+        base_support_it = itertools.cycle(iter(base_support_loader))
+        # Use the same set of examples for every episode.
+        # i.e. keep a fixed set of base examplars in memory.
+        base_support_xs, base_support_ys, *_ = drop_a_dim(next(base_support_it))
     
     for idx in range(opt.neval_episodes):
         print("\n**** Iteration {}/{} ****\n".format(idx, opt.neval_episodes))
         
         support_xs, support_ys, query_xs, query_ys = drop_a_dim(next(meta_valloader_it))
-        novelimgs = query_xs.detach().numpy() # for vis
-        
+        if base_support_loader is not None:
+            support_xs = torch.cat([support_xs, base_support_xs],0)
+            
+        if vis: novelimgs = query_xs.detach().numpy() # for vis
+
         # Get vocabs for the loaders.
         vocab_base, vocab_all, vocab_novel, orig2id = get_vocabs(base_val_loader, meta_valloader, query_ys)
         
@@ -118,7 +127,10 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
         # Map the labels to their new form.
         query_ys_id = torch.LongTensor([orig2id[y] for y in query_ys])
         support_ys_id = torch.LongTensor([orig2id[y] for y in support_ys])
-
+        
+        if base_support_loader is not None:
+            support_ys_id = torch.cat([support_ys_id, torch.from_numpy(base_support_ys)])
+            
         # Reset the network.
         net = copy.deepcopy(basenet)
         net.train()
@@ -148,11 +160,10 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
         # Fine tuning epochs.
         train_loss = 15
         epoch = 1
-#         train_acc = 0
+
         while train_loss > opt.target_train_loss or epoch < opt.novel_epochs + 1:
-#         while train_acc < 98.:
+
             freeze_backbone_weights(net, opt, epoch, exclude=["classifier"])
-#             net.train() # XXX ??
 #             base_weight = classifier.weight.clone().detach().requires_grad_(False)[:len(vocab_base),:] TODO
             support_xs = support_xs.cuda()
             support_ys_id = support_ys_id.cuda()
@@ -193,12 +204,13 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
             with torch.no_grad():
                 acc1, acc5 = accuracy(output, support_ys_id, topk=(1,5))
                 train_acc, train_loss = acc1[0], loss.item()
-                print('=======Novel Epoch {}=======\n'
-                      'Train\t'
-                      'Loss {:10.4f}\t'
-                      'Acc@1 {:10.3f}\t'
-                      'Acc@5 {:10.3f}'.format(
-                       epoch, loss.item(), acc1[0], acc5[0]))
+                if epoch % 10 == 0:
+                    print('=======Novel Epoch {}=======\n'
+                          'Train\t'
+                          'Loss {:10.4f}\t'
+                          'Acc@1 {:10.3f}\t'
+                          'Acc@5 {:10.3f}'.format(
+                           epoch, loss.item(), acc1[0], acc5[0]))
                 
 
 

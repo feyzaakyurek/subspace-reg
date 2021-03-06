@@ -63,29 +63,29 @@ def main():
 
 
         # load base evaluation dataset
-        if opt.use_episodes:
-            base_test_loader = DataLoader(MetaImageNet(args=opt, partition='test',
-                                                  train_transform=train_trans,
-                                                  test_transform=test_trans,
-                                                  fix_seed=True,
-                                                  pretrain=True),
-                                     batch_size=opt.test_batch_size, shuffle=True, drop_last=False,
-                                     num_workers=opt.num_workers)
+#         if opt.use_episodes:
+#             base_test_loader = DataLoader(MetaImageNet(args=opt, partition='test',
+#                                                   train_transform=train_trans,
+#                                                   test_transform=test_trans,
+#                                                   fix_seed=True,
+#                                                   pretrain=True),
+#                                      batch_size=opt.test_batch_size, shuffle=True, drop_last=False,
+#                                      num_workers=opt.num_workers)
 
-            base_val_loader = DataLoader(MetaImageNet(args=opt, partition='val',
-                                                      train_transform=train_trans,
-                                                      test_transform=test_trans,
-                                                      fix_seed=True,
-                                                      pretrain=True),
-                                         batch_size=opt.test_batch_size, shuffle=True, drop_last=False,
-                                         num_workers=opt.num_workers)
-            train_loader = base_val_loader
+#             base_val_loader = DataLoader(MetaImageNet(args=opt, partition='val',
+#                                                       train_transform=train_trans,
+#                                                       test_transform=test_trans,
+#                                                       fix_seed=True,
+#                                                       pretrain=True),
+#                                          batch_size=opt.test_batch_size, shuffle=True, drop_last=False,
+#                                          num_workers=opt.num_workers)
+#             train_loader = base_val_loader
 
-        else:
+#         else:
 
-            train_loader = DataLoader(ImageNet(args=opt, partition='train', transform=train_trans), #FIXME: use train
-                                  batch_size=64, shuffle=True, drop_last=True,
-                                  num_workers=opt.num_workers)
+#             train_loader = DataLoader(ImageNet(args=opt, partition='train', transform=train_trans), #FIXME: use train
+#                                   batch_size=64, shuffle=True, drop_last=True,
+#                                   num_workers=opt.num_workers)
 #             base_val_loader = DataLoader(ImageNet(args=opt, partition='val', transform=test_trans),
 #                                          batch_size=opt.test_base_batch_size // 2,
 #                                          shuffle=True,
@@ -98,34 +98,40 @@ def main():
 #                                           drop_last=False,
 #                                           num_workers=opt.num_workers // 2)
 
-            base_test_loader = DataLoader(MetaImageNet(args=opt, partition='test',
+        base_support_loader = None
+        if opt.n_base_support_samples > 0:
+            ''' We'll use support samples from base classes. '''
+            base_support_loader = DataLoader(MetaImageNet(args=opt, split='train', phase='train',
                                                   train_transform=train_trans,
                                                   test_transform=test_trans,
-                                                  fix_seed=True,
-                                                  pretrain=True),
+                                                  fix_seed=True, use_episodes=False),
+                                     batch_size=opt.test_batch_size, shuffle=True, drop_last=False, # False?
+                                     num_workers=opt.num_workers)
+
+        base_test_loader = DataLoader(MetaImageNet(args=opt, split='train', phase='test',
+                                              train_transform=train_trans,
+                                              test_transform=test_trans,
+                                              fix_seed=True, use_episodes=opt.use_episodes),
+                                 batch_size=opt.test_batch_size, shuffle=True, drop_last=False,
+                                 num_workers=opt.num_workers)
+
+        base_val_loader = DataLoader(MetaImageNet(args=opt, split='train', phase='val',
+                                                  train_transform=train_trans,
+                                                  test_transform=test_trans,
+                                                  fix_seed=True, use_episodes=opt.use_episodes),
                                      batch_size=opt.test_batch_size, shuffle=True, drop_last=False,
                                      num_workers=opt.num_workers)
 
-            base_val_loader = DataLoader(MetaImageNet(args=opt, partition='val',
-                                                      train_transform=train_trans,
-                                                      test_transform=test_trans,
-                                                      fix_seed=True,
-                                                      pretrain=True),
-                                         batch_size=opt.test_batch_size, shuffle=True, drop_last=False,
-                                         num_workers=opt.num_workers)
-
-
-
-        meta_testloader = DataLoader(MetaImageNet(args=opt, partition='test',
+        meta_testloader = DataLoader(MetaImageNet(args=opt, split='test',
                                                   train_transform=train_trans,
                                                   test_transform=test_trans,
-                                                  fix_seed=True),
+                                                  fix_seed=True, use_episodes=opt.use_episodes),
                                      batch_size=opt.test_batch_size, shuffle=False, drop_last=False,
                                      num_workers=opt.num_workers)
-        meta_valloader = DataLoader(MetaImageNet(args=opt, partition='val',
+        meta_valloader = DataLoader(MetaImageNet(args=opt, split='val',
                                                  train_transform=train_trans,
                                                  test_transform=test_trans,
-                                                 fix_seed=True),
+                                                 fix_seed=True, use_episodes=opt.use_episodes),
                                     batch_size=opt.test_batch_size, shuffle=False, drop_last=False,
                                     num_workers=opt.num_workers)
         if opt.use_trainval:
@@ -184,7 +190,7 @@ def main():
 
 
         # Save full dataset vocab if not available
-        vocab_train = [name for name in train_loader.dataset.label2human if name != '']
+        vocab_train = [name for name in base_test_loader.dataset.label2human if name != '']
         vocab_test = [name for name in meta_testloader.dataset.label2human if name != '']
         vocab_val = [name for name in meta_valloader.dataset.label2human if name != '']
         vocab_all = vocab_train + vocab_test + vocab_val
@@ -199,7 +205,7 @@ def main():
     # This is another scenario in which we'll need the embeds.
     if opt.label_pull is not None:
 #         ipdb.set_trace()
-        vocab_train = [name for name in train_loader.dataset.label2human if name != '']
+        vocab_train = [name for name in base_test_loader.dataset.label2human if name != '']
         vocab_test = [name for name in meta_testloader.dataset.label2human if name != '']
         vocab_val = [name for name in meta_valloader.dataset.label2human if name != '']
         vocab_all = vocab_train + vocab_test + vocab_val
@@ -405,7 +411,8 @@ def main():
                                                          criterion,
                                                          meta_valloader,
                                                          base_val_loader,
-                                                         opt)
+                                                         opt,
+                                                         base_support_loader=base_support_loader)
         val_time = time.time() - start
         avg_score = (base+novel)/2
         print('val_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel, 0, val_time))

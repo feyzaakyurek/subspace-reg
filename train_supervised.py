@@ -38,21 +38,21 @@ from configs import parse_option_supervised
 def main():
     opt = parse_option_supervised()
     # dataloader
-    train_partition = 'trainval' if opt.use_trainval else 'train'
+#     train_partition = 'trainval' if opt.use_trainval else 'train'
     if opt.dataset == 'miniImageNet':
         train_trans, test_trans = transforms_options[opt.transform]
-        train_loader = DataLoader(ImageNet(args=opt, partition=train_partition, transform=train_trans),
+        train_loader = DataLoader(ImageNet(args=opt, split="train", phase="train", transform=train_trans),
                                   batch_size=opt.batch_size, shuffle=True, drop_last=True,
                                   num_workers=opt.num_workers)
-        val_loader = DataLoader(ImageNet(args=opt, partition='val', transform=test_trans),
+        val_loader = DataLoader(ImageNet(args=opt, split="train", phase="val", transform=test_trans),
                                 batch_size=opt.batch_size // 2, shuffle=False, drop_last=False,
                                 num_workers=opt.num_workers // 2)
-        meta_testloader = DataLoader(MetaImageNet(args=opt, partition='test',
+        meta_testloader = DataLoader(MetaImageNet(args=opt, split='test',
                                                   train_transform=train_trans,
                                                   test_transform=test_trans),
                                      batch_size=opt.test_batch_size, shuffle=False, drop_last=False,
                                      num_workers=opt.num_workers)
-        meta_valloader = DataLoader(MetaImageNet(args=opt, partition='val',
+        meta_valloader = DataLoader(MetaImageNet(args=opt, split='val',
                                                  train_transform=train_trans,
                                                  test_transform=test_trans),
                                     batch_size=opt.test_batch_size, shuffle=False, drop_last=False,
@@ -64,19 +64,19 @@ def main():
 
     elif opt.dataset == 'tieredImageNet':
         train_trans, test_trans = transforms_options[opt.transform]
-        train_loader = DataLoader(TieredImageNet(args=opt, partition=train_partition,
+        train_loader = DataLoader(TieredImageNet(args=opt, split="train", phase="train",
                                                  transform=train_trans),
                                   batch_size=opt.batch_size, shuffle=True, drop_last=True,
                                   num_workers=opt.num_workers)
-        val_loader = DataLoader(TieredImageNet(args=opt, partition='val', transform=test_trans),
+        val_loader = DataLoader(TieredImageNet(args=opt, split="train", phase="val", transform=test_trans),
                                 batch_size=opt.batch_size // 2, shuffle=False, drop_last=False,
                                 num_workers=opt.num_workers // 2)
-        meta_testloader = DataLoader(MetaTieredImageNet(args=opt, partition='test',
+        meta_testloader = DataLoader(MetaTieredImageNet(args=opt, split='test',
                                                         train_transform=train_trans,
                                                         test_transform=test_trans),
                                      batch_size=opt.test_batch_size, shuffle=False, drop_last=False,
                                      num_workers=opt.num_workers)
-        meta_valloader = DataLoader(MetaTieredImageNet(args=opt, partition='val',
+        meta_valloader = DataLoader(MetaTieredImageNet(args=opt, split='val',
                                                        train_transform=train_trans,
                                                        test_transform=test_trans),
                                     batch_size=opt.test_batch_size, shuffle=False, drop_last=False,
