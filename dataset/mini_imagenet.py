@@ -46,6 +46,7 @@ class ImageNet(Dataset):
         else:
             self.transform = transform
 
+        
         if self.split == "train":
             file_pattern = 'miniImageNet_category_split_train_phase_{}.pickle'.format(phase)
         else:
@@ -57,6 +58,18 @@ class ImageNet(Dataset):
             self.imgs = data['data']
             self.labels = data['labels']
             self.cat2label = data['catname2label']
+            
+        if args.continual and self.split == "val":
+            file_pattern = 'miniImageNet_category_split_{}.pickle'.format("test")
+
+            with open(os.path.join(args.data_root, file_pattern), 'rb') as f:
+                data = pickle.load(f, encoding='latin1')
+                second_imgs = data['data']
+                second_labels = data['labels']
+                
+                self.imgs = np.concatenate((self.imgs, second_imgs), axis=0)
+                self.labels = np.concatenate((self.labels, second_labels), axis=0)
+                self.cat2label.update(data['catname2label'])
 
         self.label2human = [""]*100 # Total of 100 classes in mini.
 
@@ -121,7 +134,8 @@ class MetaImageNet(ImageNet):
                  train_transform=None, 
                  test_transform=None, 
                  fix_seed=True,
-                 use_episodes=False):
+                 use_episodes=False,
+                 disjoint_classes=False):
         
         super(MetaImageNet, self).__init__(args, split, phase)
         self.fix_seed = fix_seed
@@ -137,6 +151,7 @@ class MetaImageNet(ImageNet):
         self.use_episodes = args.use_episodes
         self.phase = phase
         self.split = split
+        self.disjoint_classes = disjoint_classes
         
         if self.split != "train":
             assert self.phase is None
@@ -208,6 +223,10 @@ class MetaImageNet(ImageNet):
             if self.fix_seed:
                 np.random.seed(item)
             cls_sampled = np.random.choice(self.classes, self.n_ways, False)
+
+            if self.disjoint_classes:
+                self.classes = np.setdiff1d(self.classes, cls_sampled, True)
+                print("!!! Classes: ", self.classes)
             support_xs = []
             support_ys = []
             query_xs = []
@@ -321,6 +340,8 @@ class MetaImageNet(ImageNet):
 
     def __len__(self):
         if (self.split == "train" and self.phase == "train"):
+            if self.disjoint_classes:
+                return 8
             return self.n_test_runs
         elif self.use_episodes:
             return len(self.episode_query_ids)

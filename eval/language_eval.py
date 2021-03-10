@@ -91,7 +91,8 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
     
     # Create meters.
     acc_novel, acc_base = [AverageMeter() for _ in range(2)]
-
+    weighted_avg_l = []
+    
     # Used for creation of confusion matrices.
     # preds_df = pd.DataFrame(columns = ["Episode", "Gold", "Prediction"])
     
@@ -107,11 +108,28 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
         # Use the same set of examples for every episode.
         # i.e. keep a fixed set of base examplars in memory.
         base_support_xs, base_support_ys, *_ = drop_a_dim(next(base_support_it))
+        
+    # Collect a set of query samples.
+    novel_query_collection = None # XXX
+    novel_query_collection_id = None # XXX
+    base_batch = next(base_valloader_it) # XXXX Same base batch every time.
     
-    for idx in range(opt.neval_episodes):
+    acc_base_ = eval_base(net, 
+                              base_batch, 
+                              criterion)
+    weighted_avg_l.append(acc_base_)
+    
+    
+    iter_num = opt.neval_episodes
+    if opt.continual:
+        iter_num = 7
+        
+    for idx in range(iter_num):
+#     for idx, data in enumerate(meta_valloader):
         print("\n**** Iteration {}/{} ****\n".format(idx, opt.neval_episodes))
         
         support_xs, support_ys, query_xs, query_ys = drop_a_dim(next(meta_valloader_it))
+#         support_xs, support_ys, query_xs, query_ys = drop_a_dim(data)
         if base_support_loader is not None:
             support_xs = torch.cat([support_xs, base_support_xs],0)
             
@@ -125,16 +143,26 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
 #         orig2id = dict(zip(novel_labels, len(vocab_base) + np.arange(len(novel_labels))))
         
         # Map the labels to their new form.
-        query_ys_id = torch.LongTensor([orig2id[y] for y in query_ys])
-        support_ys_id = torch.LongTensor([orig2id[y] for y in support_ys])
+        query_ys_id = torch.LongTensor([orig2id[y]+idx*opt.n_ways for y in query_ys])
+        support_ys_id = torch.LongTensor([orig2id[y]+idx*opt.n_ways for y in support_ys])
         
+        # Add the new set of queries to the collection.
+        if novel_query_collection_id is None:
+            novel_query_collection = query_xs
+            novel_query_collection_id = query_ys_id
+        else:
+            novel_query_collection = torch.cat((novel_query_collection, 
+                                                  query_xs), 0)
+            novel_query_collection_id = torch.cat((novel_query_collection_id, 
+                                                     query_ys_id), 0)
+
         if base_support_loader is not None:
             support_ys_id = torch.cat([support_ys_id, torch.from_numpy(base_support_ys)])
             
         # Reset the network.
-        net = copy.deepcopy(basenet)
+#         net = copy.deepcopy(basenet) XX
         net.train()
-        classifier = net.classifier # function of net
+        classifier = net.classifier # function of net XX
         
         # Augment the net's classifier to accommodate new classes.
         net.augment_base_classifier_(len(novel_labels))
@@ -150,9 +178,17 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
             
         
         # Validate before training. TODO
-        test_acc, *_ = validate_fine_tune(query_xs, query_ys_id, net, criterion, opt)
+        test_acc, *_ = validate_fine_tune(novel_query_collection,
+                                          novel_query_collection_id,
+                                          net, 
+                                          criterion, 
+                                          opt)
+        
+        
         print('{:25} {:.4f}\n'.format("Novel incremental acc before fine-tune:",
                                       test_acc.item()))
+        
+        
 
         # Optimizer
         optimizer = get_optim(net, opt) # TODO anything to load from ckpt?
@@ -214,11 +250,11 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
                 
 
 
-            test_acc, test_acc_top5, test_loss, query_ys_pred = validate_fine_tune(query_xs,
-                                                                                   query_ys_id,
-                                                                                   net,
-                                                                                   criterion,
-                                                                                   opt)
+            test_acc, test_acc_top5, test_loss, query_ys_pred = validate_fine_tune(novel_query_collection,
+                                                                                  novel_query_collection_id,
+                                                                                  net, 
+                                                                                  criterion, 
+                                                                                  opt)
 
             if opt.track_label_inspired_weights:
                 inspired_weights = label_inspired_weights.clone().cpu().numpy()
@@ -246,7 +282,7 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
 
         
         # Evaluate base samples with the updated network
-        base_batch = next(base_valloader_it)
+#         base_batch = next(base_valloader_it) XXXX Same base batch every time.
         vis_condition = (vis and idx == 0)
         acc_base_ = eval_base(net, 
                               base_batch, 
@@ -259,7 +295,7 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
         acc_novel.update(test_acc.item())
 
 
-        # Little pull here.
+        # Little last-mile pull here.
         if opt.label_pull is not None and opt.pulling == "last-mile": #TODO
             pull_acc_base_ = 0
             pull_test_acc = 0
@@ -293,6 +329,14 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
                   "Pull Running Average:",
                   np.mean(pull_running_avg)), flush=True)
 
+            
+        w1 = 64 if opt.dataset == "miniImageNet" else 200 # opt.test_base_batch_size
+        w2 = novel_query_collection_id.size(0) / 5 
+        weighted_avg = (w1*acc_base_ + w2*test_acc.item())/(w1+w2)
+        weighted_avg_l.append(round(weighted_avg,2))
+#         ipdb.set_trace()
+        print(f"***Running weighted avg: {weighted_avg}")
+        
         # Log episode results.
         log_episode(novel_labels,
                     vocab_novel,
@@ -335,6 +379,7 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
     if vis:
         return df
     else:
+        print("Overall continual accuracies: ", weighted_avg_l)
         return acc_novel.avg, acc_base.avg
 
 def few_shot_language_incremental_test(net, ckpt, criterion, meta_valloader, base_val_loader, opt, vis=False):

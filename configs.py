@@ -32,6 +32,10 @@ def parse_option_eval():
                         help='Number of query in test')
     parser.add_argument('--n_aug_support_samples', default=5, type=int,
                         help='The number of augmented samples for each meta test sample')
+    parser.add_argument('--n_base_aug_support_samples', default=0, type=int,
+                        help='The number of augmented samples for each meta test sample')
+    parser.add_argument('--n_base_support_samples', default=0, type=int,
+                        help='The number of support base samples per base class.')
     parser.add_argument('--num_workers', type=int, default=4, metavar='N',
                         help='Number of workers for dataloader')
     parser.add_argument('--test_batch_size', type=int, default=1, metavar='test_batch_size',
@@ -52,6 +56,8 @@ def parse_option_eval():
 
     parser.add_argument('--classifier', type=str,
                         choices=['linear', 'lang-linear', 'description-linear'])
+    parser.add_argument('--verbose', action='store_true',
+                            help='Print novel epochs..')
     parser.add_argument('--track_weights', action='store_true',
                             help='Save the classifier weights to a csv file.')
     parser.add_argument('--track_label_inspired_weights', action='store_true',
@@ -104,6 +110,8 @@ def parse_option_eval():
                             help='Where to store word embeds pickles for dataset.')
         parser.add_argument('--glove', action='store_true',
                             help='Use of Glove embeds instead of Vico.')
+        parser.add_argument('--continual', action='store_true',
+                            help='Evaluate like FSCIL.')
         parser.add_argument('--label_pull', type=float, default=None)
         parser.add_argument('--push_away', type=float, default=None)
 

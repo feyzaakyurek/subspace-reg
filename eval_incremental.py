@@ -122,16 +122,16 @@ def main():
                                      batch_size=opt.test_batch_size, shuffle=True, drop_last=False,
                                      num_workers=opt.num_workers)
 
-        meta_testloader = DataLoader(MetaImageNet(args=opt, split='test',
-                                                  train_transform=train_trans,
-                                                  test_transform=test_trans,
-                                                  fix_seed=True, use_episodes=opt.use_episodes),
-                                     batch_size=opt.test_batch_size, shuffle=False, drop_last=False,
-                                     num_workers=opt.num_workers)
+#         meta_testloader = DataLoader(MetaImageNet(args=opt, split='test',
+#                                                   train_transform=train_trans,
+#                                                   test_transform=test_trans,
+#                                                   fix_seed=True, use_episodes=opt.use_episodes),
+#                                      batch_size=opt.test_batch_size, shuffle=False, drop_last=False,
+#                                      num_workers=opt.num_workers)
         meta_valloader = DataLoader(MetaImageNet(args=opt, split='val',
                                                  train_transform=train_trans,
                                                  test_transform=test_trans,
-                                                 fix_seed=True, use_episodes=opt.use_episodes),
+                                                 fix_seed=True, use_episodes=opt.use_episodes, disjoint_classes=True),
                                     batch_size=opt.test_batch_size, shuffle=False, drop_last=False,
                                     num_workers=opt.num_workers)
         if opt.use_trainval:
@@ -410,7 +410,7 @@ def main():
                                                          ckpt,
                                                          criterion,
                                                          meta_valloader,
-                                                         base_val_loader,
+                                                         base_test_loader,
                                                          opt,
                                                          base_support_loader=base_support_loader)
         val_time = time.time() - start
@@ -419,31 +419,31 @@ def main():
         print('val_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base, 0, val_time))
         print('val_acc_average: {:.4f}'.format(avg_score))
 
-        if opt.save_preds_0:
-            df = few_shot_finetune_incremental_test(model,
-                                                    ckpt,
-                                                    criterion,
-                                                    meta_valloader,
-                                                    base_val_loader,
-                                                    opt,
-                                                    vis=True)
-            df.to_csv(f"vis_{opt.eval_mode}_pulling_{opt.pulling}_{opt.label_pull}_target_loss_{opt.target_train_loss}_synonyms_{opt.use_synonyms}.csv", index=False)
+#         if opt.save_preds_0:
+#             df = few_shot_finetune_incremental_test(model,
+#                                                     ckpt,
+#                                                     criterion,
+#                                                     meta_valloader,
+#                                                     base_val_loader,
+#                                                     opt,
+#                                                     vis=True)
+#             df.to_csv(f"vis_{opt.eval_mode}_pulling_{opt.pulling}_{opt.label_pull}_target_loss_{opt.target_train_loss}_synonyms_{opt.use_synonyms}.csv", index=False)
 
-        if not opt.track_weights and not opt.track_label_inspired_weights:
-            start = time.time()
-            opt.split = "test" # TODO: run only for best val.
-            opt.neval_episodes = original_nepisodes
-            novel, base = few_shot_finetune_incremental_test(model,
-                                                             ckpt,
-                                                             criterion,
-                                                             meta_testloader,
-                                                             base_test_loader,
-                                                             opt)
-            test_time = time.time() - start
-            avg_score = (base+novel)/2
-            print('test_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel, 0, test_time))
-            print('test_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base, 0, test_time))
-            print('test_acc_average: {:.4f}'.format(avg_score))
+#         if not opt.track_weights and not opt.track_label_inspired_weights:
+#             start = time.time()
+#             opt.split = "test" # TODO: run only for best val.
+#             opt.neval_episodes = original_nepisodes
+#             novel, base = few_shot_finetune_incremental_test(model,
+#                                                              ckpt,
+#                                                              criterion,
+#                                                              meta_testloader,
+#                                                              base_test_loader,
+#                                                              opt)
+#             test_time = time.time() - start
+#             avg_score = (base+novel)/2
+#             print('test_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel, 0, test_time))
+#             print('test_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base, 0, test_time))
+#             print('test_acc_average: {:.4f}'.format(avg_score))
 
     elif opt.eval_mode == "few-shot":
         start = time.time()
