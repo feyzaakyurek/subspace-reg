@@ -148,7 +148,7 @@ class MetaImageNet(ImageNet):
         self.n_aug_support_samples = args.n_aug_support_samples
         self.n_base_aug_support_samples = args.n_base_aug_support_samples
         self.n_base_support_samples = args.n_base_support_samples
-        self.use_episodes = args.use_episodes
+        self.use_episodes = use_episodes
         self.phase = phase
         self.split = split
         self.disjoint_classes = disjoint_classes
