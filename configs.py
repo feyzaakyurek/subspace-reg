@@ -122,6 +122,7 @@ def parse_option_eval():
                                                   "few-shot-incremental-language-pretrain-linear-tune",
                                                   "hierarchical-incremental-few-shot"]:
         parser.add_argument('--novel_epochs', type=int, default=15, help='number of epochs for novel support set.')
+        parser.add_argument('--max_novel_epochs', type=int, default=400, help='number of epochs for novel support set.')
         parser.add_argument('--learning_rate', type=float, default=0.01, help='learning rate')
         parser.add_argument('--weight_decay', type=float, default=5e-4, help='weight decay')
         parser.add_argument('--momentum', type=float, default=0.9, help='momentum')

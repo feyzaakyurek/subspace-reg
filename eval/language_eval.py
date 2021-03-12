@@ -149,7 +149,7 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
         train_loss = 15
         epoch = 1
 #         train_acc = 0
-        while train_loss > opt.target_train_loss or epoch < opt.novel_epochs + 1:
+        while (epoch < opt.max_novel_epochs) and (train_loss > opt.target_train_loss or epoch < opt.novel_epochs + 1):
 #         while train_acc < 98.:
             freeze_backbone_weights(net, opt, epoch, exclude=["classifier"])
 #             net.train() # XXX ??
