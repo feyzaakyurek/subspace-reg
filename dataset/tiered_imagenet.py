@@ -104,7 +104,7 @@ class TieredImageNet(Dataset):
             label2human = dict(zip(unique_labels, 
                                    label_file_content['label_specific_str']))
 
-            for i,human in label2human:
+            for i,human in label2human.items():
                 self.label2human[i] = human
             
         # pre-process for contrastive sampling

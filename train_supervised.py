@@ -37,6 +37,11 @@ from configs import parse_option_supervised
 
 def main():
     opt = parse_option_supervised()
+    print("************* Training arguments *************")
+    for arg in vars(opt):
+        print(arg, getattr(opt, arg))
+    print("End of arguments.\n")
+    
     # dataloader
     train_partition = 'trainval' if opt.use_trainval else 'train'
     if opt.dataset == 'miniImageNet':
