@@ -87,7 +87,9 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
         track_weights = pd.DataFrame(columns=["episode", "type", "label", "class", "fine_tune_epoch", "classifier_weight"])
     if opt.track_label_inspired_weights:
         track_inspired = pd.DataFrame(columns=["episode", "label", "fine_tune_epoch", "inspired_weight"])
-    
+    if opt.label_pull is not None and opt.attraction_override is not None:
+        ckpt = torch.load(opt.model_path)
+        
     # Create meters.
     acc_novel, acc_base = [AverageMeter() for _ in range(2)]
 
@@ -130,6 +132,9 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
         # Label pulling is a regularization towards the label attractors.
         if opt.label_pull is not None:
             lang_puller = LangPuller(opt, vocab_base, vocab_novel)
+            pullers_override = None
+            if opt.attraction_override == "mapping_linear_label2image":
+                lang_puller.create_pulling_mapping(ckpt[opt.attraction_override])
             
         # Push away from the closest base classifier weight.
         if opt.push_away is not None:
@@ -172,8 +177,17 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
 
 
             if opt.label_pull is not None and opt.pulling == "regularize":
+                pullers = lang_puller(base_weight)
+                if opt.attraction_override == "zero":
+                    pullers = torch.zeros_like(inspired)
+                if opt.attraction_override == "base_average":
+                    with torch.no_grad():
+                        base_av = torch.mean(base_weight,0)
+                        pullers = base_av.repeat(inspired.size(0),1)
+                
+                    
                 reg = lang_puller.loss1(opt.label_pull, 
-                                            lang_puller(base_weight),
+                                            pullers,
                                             net.classifier.weight[len(vocab_base):,:])
                 print("PULL: ", reg.item())
                 loss += reg

@@ -33,30 +33,57 @@ class Pusher:
         reg = -push_away * torch.norm(selected - novel_weight)
         return reg
 
+
+class LinearMap(nn.Module):
+    def __init__(self, indim, outdim):
+        super(LinearMap, self).__init__()
+        self.map = nn.Linear(indim, outdim)
         
+    def forward(self, x):
+        return self.map(x)
+    
+    
 class LangPuller(nn.Module):
     def __init__(self,opt, vocab_base, vocab_novel):
         super(LangPuller, self).__init__()
-        dim = opt.word_embed_size # TODO
+        self.mapping_model = None
+        if opt.pull_path_override is None:
+            dim = opt.word_embed_size # TODO
 
-        # Retrieve novel embeds
-        embed_pth = os.path.join(opt.word_embed_path, "{0}_dim{1}.pickle".format(opt.dataset, dim)) # TODO
-        self.novel_embeds = get_embeds(embed_pth, vocab_novel).float().cuda()
+            # Retrieve novel embeds
+            embed_pth = os.path.join(opt.word_embed_path, "{0}_dim{1}.pickle".format(opt.dataset, dim)) # TODO
+            self.novel_embeds = get_embeds(embed_pth, vocab_novel).float().cuda()
 
-        # Retrieve base embeds
-        if opt.use_synonyms:
-            embed_pth = os.path.join(opt.word_embed_path,
-                                     "{0}_dim{1}_base_synonyms.pickle".format(opt.dataset, dim)) # TOdo
-            with open(embed_pth, "rb") as openfile:
-                label_syn_embeds = pickle.load(openfile)
+            # Retrieve base embeds
+            if opt.use_synonyms:
+                embed_pth = os.path.join(opt.word_embed_path,
+                                         "{0}_dim{1}_base_synonyms.pickle".format(opt.dataset, dim)) # TOdo
+                with open(embed_pth, "rb") as openfile:
+                    label_syn_embeds = pickle.load(openfile)
+                base_embeds = []
+                for base_label in vocab_base:
+                    base_embeds.append(label_syn_embeds[base_label])
+            else:
+                embed_pth = os.path.join(opt.word_embed_path,
+                                         "{0}_dim{1}.pickle".format(opt.dataset, dim)) # TODO
+                base_embeds = get_embeds(embed_pth, vocab_base)
+        else:
+            # A specific path is provided to be used in similarity computation.
+            embed_pth = opt.pull_path_override
+            print("Reading embeds from {}".format(embed_pth))
+            with open(embed_pth, "rb") as f:
+                specific_embeds = pickle.load(f)
             base_embeds = []
             for base_label in vocab_base:
-                base_embeds.append(label_syn_embeds[base_label])
-        else:
-            embed_pth = os.path.join(opt.word_embed_path,
-                                     "{0}_dim{1}.pickle".format(opt.dataset, dim)) # TODO
-            base_embeds = get_embeds(embed_pth, vocab_base)
+                base_embeds.append(specific_embeds[base_label])
+            novel_embeds = []
+            for novel_label in vocab_novel:
+                novel_embeds.append(specific_embeds[novel_label])
+                
+            self.novel_embeds = torch.stack(novel_embeds, 0).cuda()
+            base_embeds = torch.stack(base_embeds, 0)
 
+            
         self.base_embeds = base_embeds.float().cuda()
         # This will be used to compute label attractors.
         self.softmax = nn.Softmax(dim=1)
@@ -65,16 +92,31 @@ class LangPuller(nn.Module):
             self.base_embeds = self.base_embeds[:,:300]
             self.novel_embeds = self.novel_embeds[:,:300]
 
+    def create_pulling_mapping(self, state_dict, base_weight_size=640):
+        indim = self.novel_embeds.size(1)
+        outdim = base_weight_size
+        self.mapping_model = LinearMap(indim, outdim)
+        self.mapping_model.load_state_dict(state_dict)
+        self.mapping_model = self.mapping_model.cuda()
+        
     def forward(self, base_weight, mask=False):
-        scores = self.novel_embeds @ torch.transpose(self.base_embeds, 0, 1)
-        if mask:
-            scores.fill_diagonal_(-9999)
-        scores = self.softmax(scores)
-        return scores @ base_weight # 5 x 640 for fine-tuning.
+        if self.mapping_model is None:
+            # Default way of computing pullers is thru label similarity.
+            scores = self.novel_embeds @ torch.transpose(self.base_embeds, 0, 1)
+            if mask:
+                scores.fill_diagonal_(-9999)
+            scores = self.softmax(scores)
+            return scores @ base_weight # 5 x 640 for fine-tuning.
+        else:
+            # A mapping model is provided input = novel labels
+            # output = pullers
+            inspired = self.mapping_model(self.novel_embeds)
+            return inspired
 
     def loss1(self, pull, inspired, weights):
 #         return torch.exp(pull) * self.mse(weights, inspired)
         return pull * torch.norm(inspired - weights)**2
+
 
 
 class LangLinearClassifier(nn.Module):

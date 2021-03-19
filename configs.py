@@ -106,6 +106,10 @@ def parse_option_eval():
                             help='Use of Glove embeds instead of Vico.')
         parser.add_argument('--label_pull', type=float, default=None)
         parser.add_argument('--push_away', type=float, default=None)
+        parser.add_argument('--attraction_override', type=str, default=None,
+                            help='Instead of label pullers attract to elsewhere.')
+        parser.add_argument('--pull_path_override', type=str, default=None,
+                            help='Load embeds here.')
 
 
         if parser.parse_known_args()[0].label_pull is not None:

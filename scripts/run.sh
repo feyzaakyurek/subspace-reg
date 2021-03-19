@@ -3,7 +3,7 @@
 # ======================
 
 # supervised pre-training
-# python train_supervised.py --trial pretrain --model_path dumped --tb_path tb --data_root data --classifier linear --linear_bias 
+python train_supervised.py --trial pretrain --model_path dumped --tb_path tb --data_root data --classifier linear --label_pull 0.01 --use_synonyms # --linear_bias 
 
 # distillation
 # setting '-a 1.0' should give simimlar performance
@@ -24,4 +24,4 @@
 # ======================
 
 # supervised pre-training
-python train_supervised.py --trial pretrain --model_path dumped --tb_path tb --data_root data --dataset tieredImageNet --classifier linear --epochs 60 --lr_decay_epochs "30,45" --cosine --augment_pretrain_wtrainb > "dumped/tieredImageNet_backbone.out" 
+# python train_supervised.py --trial pretrain --model_path dumped --tb_path tb --data_root data --dataset tieredImageNet --classifier linear --epochs 60 --lr_decay_epochs "30,45" --cosine --augment_pretrain_wtrainb > "dumped/tieredImageNet_backbone.out" 

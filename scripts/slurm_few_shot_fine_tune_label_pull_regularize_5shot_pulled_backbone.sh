@@ -1,18 +1,18 @@
 #!/bin/bash
 #SBATCH --constraint=xeon-g6
-#SBATCH --time=15-00:00
+#SBATCH --time=1-00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:volta:1
-#SBATCH --array=1-36
-#SBATCH --output=dumped/%A_%a.out
-#SBATCH --error=dumped/%A_%a.err
-#SBATCH --job-name=ppullfpull-nsyn
+#SBATCH --array=1-10
+#SBATCH --output=dumped/log_files/%A_%a.out
+#SBATCH --error=dumped/log_files/%A_%a.err
+#SBATCH --job-name=ppullfpull-foc
 
 
 DUMPED_PATH="/home/gridsan/akyurek/git/rfs-incremental/dumped"
-EXP_FOLDER=$DUMPED_PATH/"finetune_label_pull_pretrain_label_pull_frugal"
+EXP_FOLDER=$DUMPED_PATH/"finetune_label_pull_pretrain_label_pull_frugal_focused"
 DATA_PATH="/home/gridsan/groups/akyureklab/rfs-incremental/data"
 # BACKBONE_PATH="${DUMPED_PATH}/backbones/linear/resnet12_miniImageNet_linear_classifier_wbias/resnet12_last.pth"
 # BACKBONE_PATH="${DUMPED_PATH}/backbones/linear/resnet12_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain_classifier_linear_8075566/resnet12_last.pth"
@@ -21,13 +21,13 @@ mkdir -p $EXP_FOLDER
 cnt=0
 for LMBD in 0.3; do
 # for PPULL in 0.4 0.2 0.0 0.1 0.15 0.13 0.07 0.01 0.02 0.03; do #10
-for PPULL in 0.4 0.1 0.03 0.0; do #4
-for TRLOSS in 1.1 1.3 1.5 ; do #3
-for FPULL in 0.02 0.1 0.0; do #3
+for PPULL in 0.4 0.2 0.1 0.03 0.0; do #5
+for TRLOSS in 0.9 1.0 ; do #2
+for FPULL in 0.03; do #1
 (( cnt++ ))
 if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then
     BACKBONE_PATH="${DUMPED_PATH}/backbones/linear/label_pull/no_synonyms_label_pull_${PPULL}/resnet12_last.pth"
-    EXP_NAME=lambda_${LMBD}_trloss_${TRLOSS}_fpull_${FPULL}_regularize_ppull_${PPULL}
+    EXP_NAME=lambda_${LMBD}_trloss_${TRLOSS}_fpull_${FPULL}_regularize_ppull_${PPULL}_${SLURM_ARRAY_TASK_ID}
     LOG_STDOUT="${EXP_FOLDER}/${EXP_NAME}.out"
     LOG_STDERR="${EXP_FOLDER}/${EXP_NAME}.err"
     python eval_incremental.py --model_path $BACKBONE_PATH \

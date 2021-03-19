@@ -19,7 +19,7 @@ BACKBONE_PATH="${DUMPED_PATH}/backbones/linear/resnet12_miniImageNet_lr_0.05_dec
 # mkdir -p $EXP_FOLDER
 
 # cnt=0
-# for LMBD in 0.2 0.3 0.4; do
+# for LMBD in 0.2 0.3; do
 # for TRLOSS in 0.5 0.6 0.7 0.8; do
 # for PULL in 0.01 0.03 0.07 0.1; do
 # for EPISODES in true; do
@@ -61,13 +61,12 @@ python eval_incremental.py --model_path $BACKBONE_PATH \
                            --learning_rate 0.002 \
                            --freeze_backbone_at 1 \
                            --lmbd_reg_transform_w 0.2 \
-                           --target_train_loss 2.0 \
-                           --use_episodes true \
-                           --label_pull 0.05 \
+                           --target_train_loss 0.9 \
+                           --use_episodes \
+                           --glove \
+                           --label_pull 0.03 \
                            --pulling regularize \
-                           --neval_episodes 1 \
-                           --track_weights \
-                           --track_label_inspired_weights
+                           --attraction_override "zero"
                            
 # CUDA_VISIBLE_DEVICES=6 python eval_incremental.py --model_path $BACKBONE_PATH \
 #                            --data_root $DATA_PATH \
