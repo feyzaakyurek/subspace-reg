@@ -11,6 +11,7 @@ BASE_LABELS = "data/miniImageNet/mini_train_train_human_labels.pickle"
 MODEL_HOME = "dumped/backbones/linear/resnet12_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain_classifier_linear_8075566"
 MODEL_PATH = os.path.join(MODEL_HOME, "resnet12_last.pth")
 SAVE_PATH =os.path.join(MODEL_HOME, "resnet12_last_with_mapping.pth")
+GLOVE = True
 
 DEVICE = 'cpu' #torch.device("cuda" if torch.cuda.is_available() else "cpu")
 LR = 1.0
@@ -43,8 +44,9 @@ def main():
     base_labels = get_base_labels(BASE_LABELS)
     label_embeds = get_embeds(WORD_EMBED_PATH, vocab=base_labels).float() #Tensor
     ckpt, base_embeds = get_classifier_weights(MODEL_PATH, DEVICE) #Tensor
-
-    model = LinearMap(label_embeds.size(1),
+    label_embed_size = 300 if GLOVE else 500
+    label_embeds = label_embeds[:, :label_embed_size]
+    model = LinearMap(label_embed_size,
                       base_embeds.size(1)) # e.g. for glove 300x640
     
     optimizer = torch.optim.SGD(model.parameters(),
