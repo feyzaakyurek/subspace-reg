@@ -400,17 +400,17 @@ def main():
         opt.split = "val"
         original_nepisodes = opt.neval_episodes
         opt.neval_episodes = 300
-        novel, base = few_shot_finetune_incremental_test(model,
+        (novel, novelstd), (base, basestd), (mean, meanstd)  = few_shot_finetune_incremental_test(model,
                                                          ckpt,
                                                          criterion,
                                                          meta_valloader,
                                                          base_val_loader,
                                                          opt)
         val_time = time.time() - start
-        avg_score = (base+novel)/2
-        print('val_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel, 0, val_time))
-        print('val_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base, 0, val_time))
-        print('val_acc_average: {:.4f}'.format(avg_score))
+#         avg_score = (base+novel)/2
+        print('val_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel, novelstd, val_time))
+        print('val_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base, basestd, val_time))
+        print('val_acc_average: {:.4f}, std: {:.4f}, time: {:.1f}'.format(mean, meanstd, val_time))
 
         if opt.save_preds_0:
             df = few_shot_finetune_incremental_test(model,
@@ -426,17 +426,17 @@ def main():
             start = time.time()
             opt.split = "test" # TODO: run only for best val.
             opt.neval_episodes = original_nepisodes
-            novel, base = few_shot_finetune_incremental_test(model,
+            (novel, novelstd), (base, basestd), (mean, meanstd) = few_shot_finetune_incremental_test(model,
                                                              ckpt,
                                                              criterion,
                                                              meta_testloader,
                                                              base_test_loader,
                                                              opt)
             test_time = time.time() - start
-            avg_score = (base+novel)/2
-            print('test_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel, 0, test_time))
-            print('test_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base, 0, test_time))
-            print('test_acc_average: {:.4f}'.format(avg_score))
+#             avg_score = (base+novel)/2
+            print('test_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel, novelstd, test_time))
+            print('test_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base, basestd, test_time))
+            print('test_acc_average: {:.4f}, std: {:.4f}, time: {:.1f}'.format(mean, meanstd, test_time))
 
     elif opt.eval_mode == "few-shot":
         start = time.time()
