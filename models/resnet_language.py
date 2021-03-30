@@ -66,7 +66,7 @@ class LangPuller(nn.Module):
             else:
                 embed_pth = os.path.join(opt.word_embed_path,
                                          "{0}_dim{1}.pickle".format(opt.dataset, dim)) # TODO
-                base_embeds = get_embeds(embed_pth, vocab_base)
+                base_embeds = get_embeds(embed_pth, vocab_base, dim)
         else:
             # A specific path is provided to be used in similarity computation.
             embed_pth = opt.pull_path_override
