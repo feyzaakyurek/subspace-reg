@@ -5,23 +5,23 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:volta:1
-#SBATCH --array=1-8
+#SBATCH --array=1-4
 #SBATCH --output=dumped/%A_%a.out
 #SBATCH --error=dumped/%A_%a.err
-#SBATCH --job-name=ft_5glove
+#SBATCH --job-name=ft_5
 
 
 DUMPED_PATH="/home/gridsan/akyurek/git/rfs-incremental/dumped"
-EXP_FOLDER=$DUMPED_PATH/"finetune_afterbug_glove"
+EXP_FOLDER=$DUMPED_PATH/"finetune_new_episodes"
 DATA_PATH="/home/gridsan/groups/akyureklab/rfs-incremental/data"
 # BACKBONE_PATH="${DUMPED_PATH}/backbones/linear/resnet12_miniImageNet_linear_classifier_wbias/resnet12_last.pth"
 BACKBONE_PATH="${DUMPED_PATH}/backbones/linear/resnet12_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain_classifier_linear_8075566/resnet12_last.pth"
 mkdir -p $EXP_FOLDER
 
 cnt=0
-for TRLOSS in 0.6 0.7 0.8 0.9; do
+for TRLOSS in 0.5 0.6; do
 for LR in 0.002; do
-for LMBD in 0.3 0.2; do
+for LMBD in 0.3 0.4; do
 (( cnt++ ))
 if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then
     EXP_NAME=trloss_${TRLOSS}_lmbd_${LMBD}_${SLURM_ARRAY_TASK_ID}
@@ -32,9 +32,8 @@ if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then
                                --n_shots 5 \
                                --eval_mode few-shot-incremental-fine-tune \
                                --classifier linear \
-                               --novel_epochs 20 \
+                               --min_novel_epochs 20 \
                                --learning_rate $LR \
-                               --glove \
                                --use_episodes \
                                --lmbd_reg_transform_w $LMBD \
                                --freeze_backbone_at 1 \

@@ -5,23 +5,28 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:volta:1
-#SBATCH --array=1-1
+#SBATCH --array=1-4
 #SBATCH --output=dumped/%A_%a.out
 #SBATCH --error=dumped/%A_%a.err
-#SBATCH --job-name=pull_1shotnewep
+#SBATCH --job-name=pull_imprinted1
 
 
 DUMPED_PATH="/home/gridsan/akyurek/git/rfs-incremental/dumped"
-EXP_FOLDER=$DUMPED_PATH/"1shot/finetune_label_pull_new_episodes"
+EXP_FOLDER=$DUMPED_PATH/"1shot/finetune_label_pull_glove_imprinted_new_episodes"
 DATA_PATH="/home/gridsan/groups/akyureklab/rfs-incremental/data"
 # # BACKBONE_PATH="${DUMPED_PATH}/backbones/linear/resnet12_miniImageNet_linear_classifier_wbias/resnet12_last.pth"
 BACKBONE_PATH="${DUMPED_PATH}/backbones/linear/resnet12_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain_classifier_linear_8075566/resnet12_last.pth"
 
 mkdir -p $EXP_FOLDER
 
+# PPDB="ppdb-xl"
+# WSYN="wordnet-synonyms"
+# WSYNP="wordnet-synonyms+"
+# RETRO="word_embeds_retrofitted"
+
 cnt=0
 for LMBD in 0.02; do
-for TRLOSS in 0.3; do
+for TRLOSS in 0.3 0.4 0.5 0.6; do
 for PULL in 0.03; do
 for LR in 0.006; do
 (( cnt++ ))
@@ -43,8 +48,10 @@ if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then
                                --max_novel_epochs 1000 \
                                --pulling regularize \
                                --lmbd_reg_transform_w $LMBD \
-                               --target_train_loss $TRLOSS > $LOG_STDOUT 2> $LOG_STDERR
+                               --target_train_loss $TRLOSS \
+                               --novel_initializer imprinted > $LOG_STDOUT 2> $LOG_STDERR
 fi
+done
 done
 done
 done

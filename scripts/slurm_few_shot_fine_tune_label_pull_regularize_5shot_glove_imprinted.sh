@@ -5,14 +5,14 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:volta:1
-#SBATCH --array=1-1
+#SBATCH --array=1-4
 #SBATCH --output=dumped/%A_%a.out
 #SBATCH --error=dumped/%A_%a.err
-#SBATCH --job-name=pull_1shotnewep
+#SBATCH --job-name=pull_imprinted
 
 
 DUMPED_PATH="/home/gridsan/akyurek/git/rfs-incremental/dumped"
-EXP_FOLDER=$DUMPED_PATH/"1shot/finetune_label_pull_new_episodes"
+EXP_FOLDER=$DUMPED_PATH/"finetune_label_pull_glove_imprinted_new_episodes"
 DATA_PATH="/home/gridsan/groups/akyureklab/rfs-incremental/data"
 # # BACKBONE_PATH="${DUMPED_PATH}/backbones/linear/resnet12_miniImageNet_linear_classifier_wbias/resnet12_last.pth"
 BACKBONE_PATH="${DUMPED_PATH}/backbones/linear/resnet12_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain_classifier_linear_8075566/resnet12_last.pth"
@@ -20,32 +20,30 @@ BACKBONE_PATH="${DUMPED_PATH}/backbones/linear/resnet12_miniImageNet_lr_0.05_dec
 mkdir -p $EXP_FOLDER
 
 cnt=0
-for LMBD in 0.02; do
-for TRLOSS in 0.3; do
-for PULL in 0.03; do
-for LR in 0.006; do
+for LMBD in 0.03 0.2; do
+for TRLOSS in 0.9 1.0; do
+for PULL in 0.1; do
 (( cnt++ ))
 if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then
-    EXP_NAME=glove_lambda_${LMBD}_trloss_${TRLOSS}_pull_${PULL}_lr_${LR}_maxepochs_1000_${SLURM_ARRAY_TASK_ID}
+    EXP_NAME=glove_lambda_${LMBD}_trloss_${TRLOSS}_pull_${PULL}_$SLURM_ARRAY_TASK_ID
     LOG_STDOUT="${EXP_FOLDER}/${EXP_NAME}.out"
     LOG_STDERR="${EXP_FOLDER}/${EXP_NAME}.err"
     python eval_incremental.py --model_path $BACKBONE_PATH \
                                --data_root $DATA_PATH \
-                               --n_shots 1 \
+                               --n_shots 5 \
                                --eval_mode few-shot-incremental-fine-tune \
                                --classifier linear \
                                --min_novel_epochs 20 \
-                               --learning_rate $LR \
+                               --glove \
+                               --learning_rate 0.002 \
+                               --use_episodes \
                                --freeze_backbone_at 1 \
                                --label_pull $PULL \
-                               --glove \
-                               --use_episodes \
-                               --max_novel_epochs 1000 \
                                --pulling regularize \
                                --lmbd_reg_transform_w $LMBD \
-                               --target_train_loss $TRLOSS > $LOG_STDOUT 2> $LOG_STDERR
+                               --target_train_loss $TRLOSS \
+                               --novel_initializer imprinted > $LOG_STDOUT 2> $LOG_STDERR
 fi
-done
 done
 done
 done
@@ -54,21 +52,20 @@ done
 
 # No language fine tuning few-shot with label pull
 # python eval_incremental.py --model_path $BACKBONE_PATH \
-#                            --data_root $DATA_PATH \
-#                            --n_shots 1 \
-#                            --eval_mode few-shot-incremental-fine-tune \
-#                            --classifier linear \
-#                            --min_novel_epochs 20 \
-#                            --neval_episodes 15 \
-#                            --learning_rate 0.006 \
-#                            --freeze_backbone_at 1 \
-#                            --label_pull 0.01 \
-#                            --pulling regularize \
-#                            --use_episodes \
-#                            --glove \
-#                            --max_novel_epochs 1000 \
-#                            --lmbd_reg_transform_w 0.02 \
-#                            --target_train_loss 0.2
+#                                --data_root $DATA_PATH \
+#                                --n_shots 5 \
+#                                --eval_mode few-shot-incremental-fine-tune \
+#                                --classifier linear \
+#                                --min_novel_epochs 20 \
+#                                --glove \
+#                                --learning_rate 0.002 \
+#                                --use_episodes \
+#                                --freeze_backbone_at 1 \
+#                                --label_pull 0.05 \
+#                                --pulling regularize \
+#                                --lmbd_reg_transform_w 0.05 \
+#                                --target_train_loss 0.8 \
+#                                --novel_initializer imprinted
 
 
 # # No language fine tuning few-shot
