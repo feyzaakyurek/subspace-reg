@@ -80,6 +80,13 @@ def eval_base(net, base_batch, criterion, vocab_all=None, df=None, return_preds=
         
     return np.mean(acc_base_)
 
+def get_mean_per_class(support_xs, support_ys_id):
+    support_ys_id_ = support_ys_id - support_ys_id.min()
+    M = torch.zeros(support_ys_id_.max()+1, support_xs.shape[0])
+    M[support_ys_id_, torch.arange(support_xs.shape[0])] = 1
+    M = nn.functional.normalize(M, p=1, dim=1).cuda()
+    gm = torch.mm(M, support_xs)
+
 def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, base_val_loader, opt,  vis=False):
     if vis:
         df = pd.DataFrame(columns=['idx', 'class', 'isbase', 'predicted', 'img'])
@@ -91,7 +98,8 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
         ckpt = torch.load(opt.model_path)
         
     # Create meters.
-    acc_novel, acc_base = [AverageMeter() for _ in range(2)]
+    acc_novel, acc_base = [[] for _ in range(2)]
+#     acc_novel, acc_base = [AverageMeter() for _ in range(2)]
 
     # Used for creation of confusion matrices.
     # preds_df = pd.DataFrame(columns = ["Episode", "Gold", "Prediction"])
@@ -127,14 +135,43 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
         classifier = net.classifier # function of net
         
         # Augment the net's classifier to accommodate new classes.
-        net.augment_base_classifier_(len(novel_labels))
+        nw = None
+        if opt.novel_initializer == "imprinted":
+            with torch.no_grad():
+                output = net(support_xs.cuda(), is_feat=True)[0][-1]
+            nw = get_mean_per_class(output, support_ys_id)
+        net.augment_base_classifier_(len(novel_labels), novel_weight=nw)
         
         # Label pulling is a regularization towards the label attractors.
-        if opt.label_pull is not None:
+        if opt.label_pull is not None and opt.pulling == "regularize":
             lang_puller = LangPuller(opt, vocab_base, vocab_novel)
             pullers_override = None
             if opt.attraction_override == "mapping_linear_label2image":
                 lang_puller.create_pulling_mapping(ckpt[opt.attraction_override])
+                
+            pullers = lang_puller(base_weight)
+            if opt.attraction_override == "zero":
+                pullers = torch.zeros_like(pullers)
+            if opt.attraction_override == "base_average":
+                with torch.no_grad():
+                    base_av = torch.mean(base_weight,0)
+                    pullers = base_av.repeat(pullers.size(0),1)
+            if opt.attraction_override == "random_dirichlet":
+                with torch.no_grad():
+                    num_base = base_weight.size(0)
+                    device = base_weight.device
+                    rand_weights = torch.from_numpy(np.random.dirichlet(np.ones(num_base),size=1))
+                    rand_weights = rand_weights.float().to(device)
+                    pullers = rand_weights @ base_weight
+            if opt.attraction_override == "random_uniform":
+                with torch.no_grad():
+                    num_base = base_weight.size(0)
+                    device = base_weight.device
+                    rand_weights = torch.from_numpy(np.random.uniform(0,1,num_base))
+                    rand_weights /= torch.sum(rand_weights)
+                    rand_weights = rand_weights.float().to(device)
+                    pullers = rand_weights @ base_weight
+                
             
         # Push away from the closest base classifier weight.
         if opt.push_away is not None:
@@ -154,7 +191,7 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
         train_loss = 15
         epoch = 1
 #         train_acc = 0
-        while (epoch < opt.max_novel_epochs) and (train_loss > opt.target_train_loss or epoch < opt.novel_epochs + 1):
+        while (epoch < opt.max_novel_epochs) and (train_loss > opt.target_train_loss or epoch < opt.min_novel_epochs + 1):
 #         while train_acc < 98.:
             freeze_backbone_weights(net, opt, epoch, exclude=["classifier"])
 #             net.train() # XXX ??
@@ -177,15 +214,6 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
 
 
             if opt.label_pull is not None and opt.pulling == "regularize":
-                pullers = lang_puller(base_weight)
-                if opt.attraction_override == "zero":
-                    pullers = torch.zeros_like(inspired)
-                if opt.attraction_override == "base_average":
-                    with torch.no_grad():
-                        base_av = torch.mean(base_weight,0)
-                        pullers = base_av.repeat(inspired.size(0),1)
-                
-                    
                 reg = lang_puller.loss1(opt.label_pull, 
                                             pullers,
                                             net.classifier.weight[len(vocab_base):,:])
@@ -207,12 +235,13 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
             with torch.no_grad():
                 acc1, acc5 = accuracy(output, support_ys_id, topk=(1,5))
                 train_acc, train_loss = acc1[0], loss.item()
-                print('=======Novel Epoch {}=======\n'
-                      'Train\t'
-                      'Loss {:10.4f}\t'
-                      'Acc@1 {:10.3f}\t'
-                      'Acc@5 {:10.3f}'.format(
-                       epoch, loss.item(), acc1[0], acc5[0]))
+                if epoch % 10 == 0:
+                    print('=======Novel Epoch {}=======\n'
+                          'Train\t'
+                          'Loss {:10.4f}\t'
+                          'Acc@1 {:10.3f}\t'
+                          'Acc@5 {:10.3f}'.format(
+                           epoch, loss.item(), acc1[0], acc5[0]))
                 
 
 
@@ -257,8 +286,10 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
                               df= df if vis_condition else None)
  
         # Update meters.
-        acc_base.update(acc_base_)
-        acc_novel.update(test_acc.item())
+        acc_base.append(acc_base_)
+        acc_novel.append(test_acc.item())
+#         acc_base.update(acc_base_)
+#         acc_novel.update(test_acc.item())
 
 
         # Little pull here.
@@ -301,8 +332,10 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
                     epoch,
                     test_acc.item(),
                     acc_base_,
-                    acc_base.avg,
-                    acc_novel.avg)
+                    np.mean(acc_base),
+                    np.mean(acc_novel))
+#                     acc_base.avg,
+#                     acc_novel.avg)
         
         
 #         ######## To save preds (temporary, comment out below later) ########
@@ -337,7 +370,9 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
     if vis:
         return df
     else:
-        return acc_novel.avg, acc_base.avg
+#         return acc_novel.avg, acc_base.avg
+        acc_all = [sum(x)/2 for x in zip(acc_base, acc_novel)]
+        return mean_confidence_interval(acc_novel), mean_confidence_interval(acc_base), mean_confidence_interval(acc_all)
 
 def few_shot_language_incremental_test(net, ckpt, criterion, meta_valloader, base_val_loader, opt, vis=False):
     if vis:
