@@ -39,6 +39,11 @@ def main():
     opt = parse_option_supervised()
     # dataloader
 #     train_partition = 'trainval' if opt.use_trainval else 'train'
+
+    # Set seeds
+    torch.manual_seed(opt.set_seed)
+    np.random.seed(opt.set_seed)
+    
     if opt.dataset == 'miniImageNet':
         train_trans, test_trans = transforms_options[opt.transform]
         train_loader = DataLoader(ImageNet(args=opt, split="train", phase="train", transform=train_trans),
@@ -47,20 +52,22 @@ def main():
         val_loader = DataLoader(ImageNet(args=opt, split="train", phase="val", transform=test_trans),
                                 batch_size=opt.batch_size // 2, shuffle=False, drop_last=False,
                                 num_workers=opt.num_workers // 2)
-        meta_testloader = DataLoader(MetaImageNet(args=opt, split='test',
-                                                  train_transform=train_trans,
-                                                  test_transform=test_trans),
-                                     batch_size=opt.test_batch_size, shuffle=False, drop_last=False,
-                                     num_workers=opt.num_workers)
-        meta_valloader = DataLoader(MetaImageNet(args=opt, split='val',
-                                                 train_transform=train_trans,
-                                                 test_transform=test_trans),
-                                    batch_size=opt.test_batch_size, shuffle=False, drop_last=False,
-                                    num_workers=opt.num_workers)
+#         meta_testloader = DataLoader(MetaImageNet(args=opt, split='test',
+#                                                   train_transform=train_trans,
+#                                                   test_transform=test_trans),
+#                                      batch_size=opt.test_batch_size, shuffle=False, drop_last=False,
+#                                      num_workers=opt.num_workers)
+#         meta_valloader = DataLoader(MetaImageNet(args=opt, split='val',
+#                                                  train_transform=train_trans,
+#                                                  test_transform=test_trans),
+#                                     batch_size=opt.test_batch_size, shuffle=False, drop_last=False,
+#                                     num_workers=opt.num_workers)
         if opt.use_trainval:
             n_cls = 80
         else:
             n_cls = 64
+            if opt.continual:
+                n_cls = 60
 
     elif opt.dataset == 'tieredImageNet':
         train_trans, test_trans = transforms_options[opt.transform]
@@ -93,9 +100,9 @@ def main():
     if opt.classifier in ["lang-linear", "description-linear"] or opt.label_pull is not None:
         # Save full dataset vocab if not available
         vocab_train = [name for name in train_loader.dataset.label2human if name != '']
-        vocab_test = [name for name in meta_testloader.dataset.label2human if name != '']
-        vocab_val = [name for name in meta_valloader.dataset.label2human if name != '']
-        vocab = vocab_train + vocab_test + vocab_val
+#         vocab_test = [name for name in meta_testloader.dataset.label2human if name != '']
+#         vocab_val = [name for name in meta_valloader.dataset.label2human if name != '']
+        vocab = vocab_train # + vocab_val # + vocab_test 
 
         if opt.classifier == "lang-linear" or opt.label_pull:
             create_and_save_embeds(opt, vocab)
@@ -181,7 +188,7 @@ def main():
                 'epoch': epoch,
                 'model': model.state_dict() if opt.n_gpu <= 1 else model.module.state_dict(),
             }
-            save_file = os.path.join(opt.save_folder, 'ckpt_epoch_{epoch}.pth'.format(epoch=epoch))
+            save_file = os.path.join(opt.model_path, 'ckpt_epoch_{epoch}.pth'.format(epoch=epoch))
             torch.save(state, save_file)
 
     # save the last model
@@ -189,7 +196,7 @@ def main():
         'opt': opt,
         'model': model.state_dict() if opt.n_gpu <= 1 else model.module.state_dict(),
     }
-    save_file = os.path.join(opt.save_folder, '{}_last.pth'.format(opt.model))
+    save_file = os.path.join(opt.model_path, '{}_last.pth'.format(opt.model))
     torch.save(state, save_file)
 
 

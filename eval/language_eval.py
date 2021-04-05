@@ -32,7 +32,7 @@ import io
 import base64
 
 
-def validate_fine_tune(query_xs, query_ys_id, net, criterion, opt):
+def validate_fine_tune(query_xs, query_ys_id, net, criterion, opt, epoch):
     net.eval()
     with torch.no_grad():
         if torch.cuda.is_available():
@@ -47,11 +47,12 @@ def validate_fine_tune(query_xs, query_ys_id, net, criterion, opt):
             acc1, acc5 = accuracy(output, query_ys_id, topk=(1, 5))
             query_ys_pred = torch.argmax(output, dim=1).detach().cpu().numpy()
 #             if opt.verbose:
-            print('Test \t'
-                  'Loss {:10.4f}\t'
-                  'Acc@1 {:10.3f}\t'
-                  'Acc@5 {:10.3f}'.format(
-                   loss.item(), acc1[0], acc5[0]))
+            if epoch % 10 == 0:
+                print('Test \t'
+                      'Loss {:10.4f}\t'
+                      'Acc@1 {:10.3f}\t'
+                      'Acc@5 {:10.3f}'.format(
+                       loss.item(), acc1[0], acc5[0]))
 
     return acc1[0], acc5[0], loss.item(), query_ys_pred
 
@@ -92,6 +93,8 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
     # Create meters.
     acc_novel, acc_base = [AverageMeter() for _ in range(2)]
     weighted_avg_l = []
+    acc_novel_list = []
+    acc_base_list = []
     
     # Used for creation of confusion matrices.
     # preds_df = pd.DataFrame(columns = ["Episode", "Gold", "Prediction"])
@@ -122,7 +125,7 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
     
     iter_num = opt.neval_episodes
     if opt.continual:
-        iter_num = 7
+        iter_num = 8
         
     for idx in range(iter_num):
 #     for idx, data in enumerate(meta_valloader):
@@ -136,8 +139,13 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
         if vis: novelimgs = query_xs.detach().numpy() # for vis
 
         # Get vocabs for the loaders.
+        if idx > 0:
+            prev_vocab_base = vocab_base
+            prev_vocab_novel = vocab_novel
         vocab_base, vocab_all, vocab_novel, orig2id = get_vocabs(base_val_loader, meta_valloader, query_ys)
-        
+        if idx > 0:
+            vocab_base = prev_vocab_base + prev_vocab_novel
+
         # Get sorted numeric labels, create a mapping that maps the order to actual label
         novel_labels = np.sort(np.unique(query_ys)) # true labels of novel samples.
 #         orig2id = dict(zip(novel_labels, len(vocab_base) + np.arange(len(novel_labels))))
@@ -168,8 +176,14 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
         net.augment_base_classifier_(len(novel_labels))
         
         # Label pulling is a regularization towards the label attractors.
+#         if opt.label_pull is not None:
+#             lang_puller = LangPuller(opt, vocab_base, vocab_novel)
         if opt.label_pull is not None:
-            lang_puller = LangPuller(opt, vocab_base, vocab_novel)
+            if idx == 0:
+                lang_puller = LangPuller(opt, vocab_base, vocab_novel)
+            else:
+                lang_puller.update_novel_embeds(vocab_novel)
+#                 lang_puller.augment_novel_embeds(vocab_novel)
             
         # Push away from the closest base classifier weight.
         if opt.push_away is not None:
@@ -182,7 +196,8 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
                                           novel_query_collection_id,
                                           net, 
                                           criterion, 
-                                          opt)
+                                          opt,
+                                          0)
         
         
         print('{:25} {:.4f}\n'.format("Novel incremental acc before fine-tune:",
@@ -220,15 +235,16 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
 
             if opt.label_pull is not None and opt.pulling == "regularize":
                 reg = lang_puller.loss1(opt.label_pull, 
-                                            lang_puller(base_weight),
-                                            net.classifier.weight[len(vocab_base):,:])
-                print("PULL: ", reg.item())
+                                        lang_puller(base_weight),
+                                        net.classifier.weight[len(vocab_base):,:])
+                if epoch % 10 == 0:
+                    print("PULL: ", reg.item())
                 loss += reg
                 
                 
             if opt.push_away is not None:
                 reg = pusher.loss1(opt.push_away, 
-                                     net.classifier.weight[len(vocab_base):,:])
+                                   net.classifier.weight[len(vocab_base):,:])
                 print("PUSH: ", reg.item())
                 loss += reg
 
@@ -254,7 +270,8 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
                                                                                   novel_query_collection_id,
                                                                                   net, 
                                                                                   criterion, 
-                                                                                  opt)
+                                                                                  opt,
+                                                                                  epoch)
 
             if opt.track_label_inspired_weights:
                 inspired_weights = label_inspired_weights.clone().cpu().numpy()
@@ -330,11 +347,14 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
                   np.mean(pull_running_avg)), flush=True)
 
             
-        w1 = 64 if opt.dataset == "miniImageNet" else 200 # opt.test_base_batch_size
-        w2 = novel_query_collection_id.size(0) / 5 
+        w1 = 60 if opt.dataset == "miniImageNet" else 200 # opt.test_base_batch_size
+        w2 = len(vocab_base) + len(vocab_novel) - 60
         weighted_avg = (w1*acc_base_ + w2*test_acc.item())/(w1+w2)
         weighted_avg_l.append(round(weighted_avg,2))
-#         ipdb.set_trace()
+        acc_novel_list.append(round(test_acc.item(),2))
+        acc_base_list.append(round(acc_base_,2))
+        
+
         print(f"***Running weighted avg: {weighted_avg}")
         
         # Log episode results.
@@ -380,6 +400,8 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
         return df
     else:
         print("Overall continual accuracies: ", weighted_avg_l)
+        print("Novel only incremental: ", acc_novel_list)
+        print("Base only incremental: ", acc_base_list)
         return acc_novel.avg, acc_base.avg
 
 def few_shot_language_incremental_test(net, ckpt, criterion, meta_valloader, base_val_loader, opt, vis=False):

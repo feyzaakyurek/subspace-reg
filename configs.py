@@ -114,6 +114,8 @@ def parse_option_eval():
                             help='Evaluate like FSCIL.')
         parser.add_argument('--label_pull', type=float, default=None)
         parser.add_argument('--push_away', type=float, default=None)
+        parser.add_argument('--no_dropblock', action='store_true',
+                            help='Disable dropblock.')
 
 
         if parser.parse_known_args()[0].label_pull is not None:
@@ -218,7 +220,12 @@ def parse_option_supervised():
     parser.add_argument('--classifier', type=str,
                         choices=['linear', 'lang-linear', 'description-linear'])
     parser.add_argument('-t', '--trial', type=str, default='1', help='the experiment id')
-
+    parser.add_argument('--continual', action='store_true',
+                            help='Evaluate like FSCIL/ILVDQ.')
+    parser.add_argument('--no_dropblock', action='store_true',
+                            help='Disable dropblock.')
+    parser.add_argument('--set_seed', type=int, default=5,
+                        help='Seed for torch and np.')
     #if parser.parse_known_args()[0].classifier in ["linear"]:
     parser.add_argument('--no_linear_bias', action='store_true', help='Do not use bias in linear classifier.')
 

@@ -37,6 +37,7 @@ class Pusher:
 class LangPuller(nn.Module):
     def __init__(self,opt, vocab_base, vocab_novel):
         super(LangPuller, self).__init__()
+        self.opt = opt
         dim = opt.word_embed_size # TODO
 
         # Retrieve novel embeds
@@ -64,6 +65,17 @@ class LangPuller(nn.Module):
         if opt.glove: #todo
             self.base_embeds = self.base_embeds[:,:300]
             self.novel_embeds = self.novel_embeds[:,:300]
+            
+    def update_novel_embeds(self, vocab_novel):
+        # Retrieve novel embeds
+        opt = self.opt
+        dim = opt.word_embed_size
+        embed_pth = os.path.join(opt.word_embed_path, "{0}_dim{1}.pickle".format(opt.dataset, dim))
+        new_novel_embeds = get_embeds(embed_pth, vocab_novel).float().cuda()
+        self.novel_embeds = new_novel_embeds
+        if opt.glove: #todo
+            self.novel_embeds = self.novel_embeds[:,:300]
+#         self.novel_embeds = torch.cat((self.novel_embeds, new_novel_embeds), 0)
 
     def forward(self, base_weight, mask=False):
         scores = self.novel_embeds @ torch.transpose(self.base_embeds, 0, 1)
@@ -239,6 +251,9 @@ class ResNet(nn.Module):
                                        stride=2, drop_rate=drop_rate)
         self.layer2 = self._make_layer(block, n_blocks[1], 160,
                                        stride=2, drop_rate=drop_rate)
+        if opt.no_dropblock:
+            drop_block = False
+            dropblock_size = 1
         self.layer3 = self._make_layer(block, n_blocks[2], 320,
                                        stride=2, drop_rate=drop_rate, drop_block=True, block_size=dropblock_size)
         self.layer4 = self._make_layer(block, n_blocks[3], 640,

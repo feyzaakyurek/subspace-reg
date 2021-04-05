@@ -25,6 +25,8 @@ class ImageNet(Dataset):
         self.std = [70.68188272 / 255.0, 68.27635443 / 255.0, 72.54505529 / 255.0]
         self.normalize = transforms.Normalize(mean=self.mean, std=self.std)
         self.unnormalize = transforms.Normalize(mean=-np.array(self.mean)/self.std, std=1/np.array(self.std))
+        
+        np.random.seed(args.set_seed)
 
         if transform is None:
             if self.split == 'train' and self.data_aug:
@@ -46,11 +48,13 @@ class ImageNet(Dataset):
         else:
             self.transform = transform
 
-        
-        if self.split == "train":
-            file_pattern = 'miniImageNet_category_split_train_phase_{}.pickle'.format(phase)
+        if args.continual:
+            file_pattern = "all.pickle" # data root should be data/continual
         else:
-            file_pattern = 'miniImageNet_category_split_{}.pickle'.format(split)
+            if self.split == "train":
+                file_pattern = 'miniImageNet_category_split_train_phase_{}.pickle'.format(phase)
+            else:
+                file_pattern = 'miniImageNet_category_split_{}.pickle'.format(split)
             
         self.data = {}
         with open(os.path.join(args.data_root, file_pattern), 'rb') as f:
@@ -58,18 +62,89 @@ class ImageNet(Dataset):
             self.imgs = data['data']
             self.labels = data['labels']
             self.cat2label = data['catname2label']
-            
-        if args.continual and self.split == "val":
-            file_pattern = 'miniImageNet_category_split_{}.pickle'.format("test")
 
-            with open(os.path.join(args.data_root, file_pattern), 'rb') as f:
-                data = pickle.load(f, encoding='latin1')
-                second_imgs = data['data']
-                second_labels = data['labels']
+#         if args.continual and self.split == "val":
+#             file_pattern = 'miniImageNet_category_split_{}.pickle'.format("test")
+
+#             with open(os.path.join(args.data_root, file_pattern), 'rb') as f:
+#                 data = pickle.load(f, encoding='latin1')
+#                 second_imgs = data['data']
+#                 second_labels = data['labels']
                 
-                self.imgs = np.concatenate((self.imgs, second_imgs), axis=0)
-                self.labels = np.concatenate((self.labels, second_labels), axis=0)
-                self.cat2label.update(data['catname2label'])
+#                 self.imgs = np.concatenate((self.imgs, second_imgs), axis=0)
+#                 self.labels = np.concatenate((self.labels, second_labels), axis=0)
+#                 self.cat2label.update(data['catname2label'])
+
+        # If continual, we read the whole data.
+        # Based on the seed and split read the classes. 
+        # Filter accordingly.
+        if args.continual:
+            all_classes = np.arange(100)
+            np.random.shuffle(all_classes) # Shuffles in place.
+            basec = all_classes[:60]
+            # Create mapping for base classes as they are not consecutive anymore.
+            self.basec_map = dict(zip(basec, np.arange(len(basec))))
+            
+            valc = all_classes[60:]
+#             testc = all_classes[76:]
+            
+            if split == "train":
+                base_samples = [i for i, e in enumerate(data['labels']) if e in basec]
+                
+                np.random.shuffle(base_samples) # Shuffle the images that belong in base classes.
+                nbc = len(basec)
+                ttrain, tval, ttest = base_samples[:500*nbc], base_samples[500*nbc:500*nbc+50*nbc], base_samples[500*nbc+50*nbc:]
+                ttrain, tval, ttest = np.array(ttrain), np.array(tval), np.array(ttest)
+                if phase == "train":
+                    self.labels = [self.labels[i] for i in ttrain] 
+                    self.imgs = self.imgs[ttrain,:] 
+                elif phase == "val":
+                    self.labels = [self.labels[i] for i in tval] 
+                    self.imgs = self.imgs[tval,:] 
+                elif phase == "test":
+                    self.labels = [self.labels[i] for i in ttest] 
+                    self.imgs = self.imgs[ttest,:] 
+                else:
+                    raise ValueError(f"Phase {phase} is unrecognized for split train.")
+                    
+                # Map labels to be consecutive
+                self.labels = [self.basec_map[e] for e in self.labels]
+                
+                # Set the specific cat2label dict for base classes.
+                new_cat2label = {}
+                for k,v in self.cat2label.items():
+                    if v in basec:
+                        new_cat2label[k] = self.basec_map[v]
+                self.cat2label = new_cat2label
+                
+            
+            elif split == "val":
+                val_samples = [i for i, e in enumerate(data['labels']) if e in valc]
+                val_samples = np.array(val_samples)
+                self.labels = [self.labels[i] for i in val_samples] 
+                self.imgs = self.imgs[val_samples,:] 
+                
+                # Set the specific cat2label dict for val classes.
+                new_cat2label = {}
+                for k,v in self.cat2label.items():
+                    if v in valc:
+                        new_cat2label[k] = v
+                self.cat2label = new_cat2label
+                
+#             elif split == "test":
+#                 test_samples = [i for i, e in enumerate(data['labels']) if e in testc]
+#                 self.labels = self.labels[test_samples] 
+#                 self.imgs = self.data[test_samples]
+            
+#                 # Set the specific cat2label dict for test classes.
+#                 new_cat2label = {}
+#                 for k,v in self.cat2label:
+#                     if v in testc:
+#                         new_cat2label[k] = v
+#                 self.cat2label = new_cat2label
+                
+            else:
+                raise ValueError(f"No such split as {split}.")
 
         self.label2human = [""]*100 # Total of 100 classes in mini.
 

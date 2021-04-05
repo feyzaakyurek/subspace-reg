@@ -137,7 +137,7 @@ def main():
         if opt.use_trainval:
             n_cls = 80
         else:
-            n_cls = 64
+            n_cls = 60
     elif opt.dataset == 'tieredImageNet':
         train_trans, test_trans = transforms_test_options[opt.transform]
 
@@ -193,7 +193,7 @@ def main():
         vocab_train = [name for name in base_test_loader.dataset.label2human if name != '']
         vocab_test = [name for name in meta_testloader.dataset.label2human if name != '']
         vocab_val = [name for name in meta_valloader.dataset.label2human if name != '']
-        vocab_all = vocab_train + vocab_test + vocab_val
+        vocab_all = vocab_train + vocab_val + vocab_test 
         if opt.classifier == "description-linear":
             create_and_save_descriptions(opt, vocab_all)
         else:
@@ -206,9 +206,9 @@ def main():
     if opt.label_pull is not None:
 #         ipdb.set_trace()
         vocab_train = [name for name in base_test_loader.dataset.label2human if name != '']
-        vocab_test = [name for name in meta_testloader.dataset.label2human if name != '']
+#         vocab_test = [name for name in meta_testloader.dataset.label2human if name != '']
         vocab_val = [name for name in meta_valloader.dataset.label2human if name != '']
-        vocab_all = vocab_train + vocab_test + vocab_val
+        vocab_all = vocab_train + vocab_val # + vocab_test
         create_and_save_embeds(opt, vocab_all)
 
         if opt.use_synonyms:
