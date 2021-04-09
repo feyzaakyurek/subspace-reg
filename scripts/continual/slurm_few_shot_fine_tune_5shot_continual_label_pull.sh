@@ -5,10 +5,10 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:volta:1
-#SBATCH --array=1-12
+#SBATCH --array=1-40
 #SBATCH --output=dumped/%A_%a.out
 #SBATCH --error=dumped/%A_%a.err
-#SBATCH --job-name=continual_5pull
+#SBATCH --job-name=cont_5label_lmbd
 
 
 DUMPED_PATH="/home/gridsan/akyurek/git/rfs-incremental/dumped"
@@ -21,16 +21,17 @@ DATA_PATH="/home/gridsan/akyurek/git/rfs-incremental/data"
 mkdir -p $EXP_FOLDER
 
 cnt=0
-for TRLOSS in 0.7 0.8 1.0 1.2; do
+for TRLOSS in 1.0 1.1; do
 for LR in 0.002; do
-for LMBD in 0.2; do
-for PULL in 0.01 0.03 0.05; do
+for LMBD in 0.2 0.4; do
+for PULL in 0.05; do
+for SEED in {1..10}; do
 (( cnt++ ))
 if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then
-    EXP_NAME=trloss_${TRLOSS}_lmbd_${LMBD}_pull_${PULL}_${SLURM_ARRAY_TASK_ID}
+    EXP_NAME=seed_${SEED}_trloss_${TRLOSS}_lmbd_${LMBD}_pull_${PULL}_${SLURM_ARRAY_TASK_ID}
     LOG_STDOUT="${EXP_FOLDER}/${EXP_NAME}.out"
     LOG_STDERR="${EXP_FOLDER}/${EXP_NAME}.err"
-    BACKBONE_PATH="${DUMPED_PATH}/backbones/continual/resnet18/1/resnet18_last.pth"
+    BACKBONE_PATH="${DUMPED_PATH}/backbones/continual/resnet18/${SEED}/resnet18_last.pth"
     
     python eval_incremental.py --model_path $BACKBONE_PATH \
                            --model resnet18 \
@@ -49,16 +50,17 @@ if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then
                            --lmbd_reg_transform_w $LMBD \
                            --target_train_loss $TRLOSS \
                            --label_pull $PULL \
-                           --set_seed 1 > $LOG_STDOUT 2> $LOG_STDERR
+                           --set_seed $SEED > $LOG_STDOUT 2> $LOG_STDERR
 fi
 done
 done
 done
 done
+done
+
 # For debugging.                           
-
-
 # No language fine tuning few-shot
+# BACKBONE_PATH="${DUMPED_PATH}/backbones/continual/resnet18/2/resnet18_last.pth"
 # python eval_incremental.py --model_path $BACKBONE_PATH \
 #                            --model resnet18 \
 #                            --no_dropblock \
@@ -71,12 +73,12 @@ done
 #                            --freeze_backbone_at 1 \
 #                            --test_base_batch_size 2000 \
 #                            --continual \
-#                            --num_workers 0 \
 #                            --n_queries 25 \
+#                            --num_workers 0 \
 #                            --lmbd_reg_transform_w 0.2 \
-#                            --target_train_loss 1.0 \
-#                            --label_pull 0.03 \
-#                            --set_seed 1
+#                            --target_train_loss 1.2 \
+#                            --label_pull 0.05 \
+#                            --set_seed 2
                            
 
 

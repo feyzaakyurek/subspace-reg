@@ -116,6 +116,8 @@ def parse_option_eval():
         parser.add_argument('--push_away', type=float, default=None)
         parser.add_argument('--no_dropblock', action='store_true',
                             help='Disable dropblock.')
+        parser.add_argument('--attraction_override', type=str, default=None,
+                            help='Instead of label pullers attract to elsewhere.')
 
 
         if parser.parse_known_args()[0].label_pull is not None:

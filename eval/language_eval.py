@@ -60,10 +60,9 @@ def eval_base(net, base_batch, criterion, vocab_all=None, df=None, return_preds=
     acc_base_ = []
     net.eval()
     with torch.no_grad():
-        *_, input, target = base_batch
+        input, target, _ = base_batch
         input = input.squeeze(0).cuda()
         target = target.squeeze(0).cuda()
-
         output = net(input) 
         loss = criterion(output, target)
         
@@ -98,6 +97,10 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
     
     # Used for creation of confusion matrices.
     # preds_df = pd.DataFrame(columns = ["Episode", "Gold", "Prediction"])
+    
+    # Reset seeds.
+    torch.manual_seed(opt.set_seed)
+    np.random.seed(opt.set_seed)
     
     # Pretrained backbone, net will be reset before every episode.
     basenet = copy.deepcopy(net).cuda()
@@ -176,14 +179,24 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
         net.augment_base_classifier_(len(novel_labels))
         
         # Label pulling is a regularization towards the label attractors.
-#         if opt.label_pull is not None:
-#             lang_puller = LangPuller(opt, vocab_base, vocab_novel)
-        if opt.label_pull is not None:
+        if opt.label_pull is not None and opt.pulling == "regularize":
             if idx == 0:
                 lang_puller = LangPuller(opt, vocab_base, vocab_novel)
             else:
                 lang_puller.update_novel_embeds(vocab_novel)
-#                 lang_puller.augment_novel_embeds(vocab_novel)
+
+            pullers = lang_puller(base_weight)
+
+            if opt.attraction_override == "random_uniform":
+                with torch.no_grad():
+                    num_base = base_weight.size(0)
+                    device = base_weight.device
+                    rand_weights = torch.from_numpy(np.random.uniform(0,1,num_base))
+                    rand_weights /= torch.sum(rand_weights)
+                    rand_weights = rand_weights.float().to(device)
+                    pullers = rand_weights @ base_weight
+
+
             
         # Push away from the closest base classifier weight.
         if opt.push_away is not None:
@@ -230,12 +243,27 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
             
             # Penalize the change in base classifier weights.
             if opt.lmbd_reg_transform_w is not None:
-                loss += net.regloss(opt.lmbd_reg_transform_w, base_weight, base_bias)
-
+                lmbd_reg = net.regloss(opt.lmbd_reg_transform_w, base_weight, base_bias)
+                if epoch % 10 == 0:
+                    print("LMBD: ", lmbd_reg.item())
+                loss += lmbd_reg
 
             if opt.label_pull is not None and opt.pulling == "regularize":
+                
+                pullers = lang_puller(base_weight)
+                
+                if opt.attraction_override == "random_uniform":
+                    with torch.no_grad():
+                        num_base = base_weight.size(0)
+                        device = base_weight.device
+                        rand_weights = torch.from_numpy(np.random.uniform(0,1,num_base))
+                        rand_weights /= torch.sum(rand_weights)
+                        rand_weights = rand_weights.float().to(device)
+                        pullers = rand_weights @ base_weight
+                
+                
                 reg = lang_puller.loss1(opt.label_pull, 
-                                        lang_puller(base_weight),
+                                        pullers,
                                         net.classifier.weight[len(vocab_base):,:])
                 if epoch % 10 == 0:
                     print("PULL: ", reg.item())

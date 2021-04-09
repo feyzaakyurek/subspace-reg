@@ -32,7 +32,7 @@ from eval.language_eval import few_shot_language_incremental_test, few_shot_fine
 # run = wandb.init(project="lil", mode="offline")
 from configs import parse_option_eval
 
-torch.multiprocessing.set_sharing_strategy('file_system')
+# torch.multiprocessing.set_sharing_strategy('file_system')
 def main():
 
     opt = parse_option_eval()
@@ -92,11 +92,11 @@ def main():
 #                                          drop_last=False,
 #                                          num_workers=opt.num_workers // 2)
 
-#             base_test_loader = DataLoader(ImageNet(args=opt, partition='test', transform=test_trans),
-#                                           batch_size=opt.test_base_batch_size // 2,
-#                                           shuffle=True,
-#                                           drop_last=False,
-#                                           num_workers=opt.num_workers // 2)
+        base_test_loader = DataLoader(ImageNet(args=opt, split='train', phase='test', transform=test_trans),
+                                      batch_size=opt.test_base_batch_size // 2,
+                                      shuffle=False,
+                                      drop_last=False,
+                                      num_workers=opt.num_workers // 2)
 
         base_support_loader = None
         if opt.n_base_support_samples > 0:
@@ -108,19 +108,19 @@ def main():
                                      batch_size=opt.test_batch_size, shuffle=True, drop_last=False, # False?
                                      num_workers=opt.num_workers)
 
-        base_test_loader = DataLoader(MetaImageNet(args=opt, split='train', phase='test',
-                                              train_transform=train_trans,
-                                              test_transform=test_trans,
-                                              fix_seed=True, use_episodes=opt.use_episodes),
-                                 batch_size=opt.test_batch_size, shuffle=True, drop_last=False,
-                                 num_workers=opt.num_workers)
+#         base_test_loader = DataLoader(MetaImageNet(args=opt, split='train', phase='test',
+#                                               train_transform=train_trans,
+#                                               test_transform=test_trans,
+#                                               fix_seed=True, use_episodes=opt.use_episodes),
+#                                  batch_size=opt.test_batch_size, shuffle=True, drop_last=False,
+#                                  num_workers=opt.num_workers)
 
-        base_val_loader = DataLoader(MetaImageNet(args=opt, split='train', phase='val',
-                                                  train_transform=train_trans,
-                                                  test_transform=test_trans,
-                                                  fix_seed=True, use_episodes=opt.use_episodes),
-                                     batch_size=opt.test_batch_size, shuffle=True, drop_last=False,
-                                     num_workers=opt.num_workers)
+#         base_val_loader = DataLoader(MetaImageNet(args=opt, split='train', phase='val',
+#                                                   train_transform=train_trans,
+#                                                   test_transform=test_trans,
+#                                                   fix_seed=True, use_episodes=opt.use_episodes),
+#                                      batch_size=opt.test_batch_size, shuffle=True, drop_last=False,
+#                                      num_workers=opt.num_workers)
 
 #         meta_testloader = DataLoader(MetaImageNet(args=opt, split='test',
 #                                                   train_transform=train_trans,

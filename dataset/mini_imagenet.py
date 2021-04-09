@@ -8,7 +8,7 @@ import torchvision.transforms as transforms
 import warnings
 import re
 import ipdb
-torch.multiprocessing.set_sharing_strategy('file_system')
+# torch.multiprocessing.set_sharing_strategy('file_system')
 class ImageNet(Dataset):
     def __init__(self, 
                  args, 
@@ -290,6 +290,11 @@ class MetaImageNet(ImageNet):
                 self.data[self.labels[idx]] = []
             self.data[self.labels[idx]].append(self.imgs[idx])
         self.classes = list(self.data.keys())
+        
+        if self.fix_seed:
+            np.random.seed(args.set_seed)
+            np.random.shuffle(self.classes)
+            
         print("Self.classes", self.classes)
 
     def __getitem__(self, item):
@@ -297,11 +302,12 @@ class MetaImageNet(ImageNet):
             assert self.n_base_support_samples == 0 # this is not implemented for base support =! n_shot.
             if self.fix_seed:
                 np.random.seed(item)
-            cls_sampled = np.random.choice(self.classes, self.n_ways, False)
-
+                
             if self.disjoint_classes:
-                self.classes = np.setdiff1d(self.classes, cls_sampled, True)
-                print("!!! Classes: ", self.classes)
+                cls_sampled = self.classes[:self.n_ways] # 
+                self.classes = self.classes[self.n_ways:]
+            else:
+                cls_sampled = np.random.choice(self.classes, self.n_ways, False)
             support_xs = []
             support_ys = []
             query_xs = []
