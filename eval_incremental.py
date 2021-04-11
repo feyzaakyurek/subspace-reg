@@ -180,7 +180,7 @@ def main():
 
     # Load model if available, check bias.
     ckpt = torch.load(opt.model_path)
-
+    
     # If language classifiers are used, then we'll need the embeds recorded.
     if opt.classifier in ["lang-linear", "description-linear"]:
         opt.multip_fc = ckpt['opt'].multip_fc
@@ -214,11 +214,6 @@ def main():
         if opt.use_synonyms:
             create_and_save_synonyms(opt, vocab_train, vocab_test, vocab_val)
 
-
-
-
-#         opt.no_linear_bias = ckpt['opt'].no_linear_bias
-
     if opt.classifier =="linear":
         if 'classifier.bias' in ckpt['model'].keys():
             if ckpt['model']['classifier.bias'] is None:
@@ -227,20 +222,14 @@ def main():
         else:
             opt.linear_bias = False
 
-#         try:
-#             bias = ckpt['model']['classifier.bias']
-#             opt.linear_bias = bias is not None
-#         except:
-#             print("!!!! Setting bias to false !!!!")
-#             opt.linear_bias = False
 
     model = create_model(opt.model, n_cls, opt, vocab=vocab, dataset=opt.dataset)
     print("Loading model...")
-    try:
-        model.load_state_dict(ckpt['model'])
-    except Exception as e:
-        print(e)
-        model.load_state_dict(ckpt['model'], strict=False)
+#     try:
+    model.load_state_dict(ckpt['model'])
+#     except Exception as e:
+#         print(e)
+#         model.load_state_dict(ckpt['model'], strict=False)
 
     if torch.cuda.is_available():
         model = model.cuda()
