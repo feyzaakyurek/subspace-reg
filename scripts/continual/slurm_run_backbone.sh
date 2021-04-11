@@ -5,20 +5,20 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:volta:1
-#SBATCH --array=1-3
+#SBATCH --array=1-10
 #SBATCH --output=dumped/%A_%a.out
 #SBATCH --error=dumped/%A_%a.err
-#SBATCH --job-name=resnet18orig_continual
+#SBATCH --job-name=resnet18
 
 
 
 DUMPED_PATH="/home/gridsan/akyurek/git/rfs-incremental/dumped"
 DATA_PATH="/home/gridsan/akyurek/git/rfs-incremental/data"
-BACKBONE_FOLDER=${DUMPED_PATH}/backbones/continual/resnet18_orig2
+BACKBONE_FOLDER=${DUMPED_PATH}/backbones/continual/resnet18
 mkdir -p $BACKBONE_FOLDER
 
 cnt=0
-for SEED in {1..3}; do
+for SEED in {1..10}; do
 (( cnt++ ))
 if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then 
     EXP_NAME=continual_backbone_seed_${SEED}

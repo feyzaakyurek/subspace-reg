@@ -5,7 +5,7 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:volta:1
-#SBATCH --array=1-40
+#SBATCH --array=1-20
 #SBATCH --output=dumped/%A_%a.out
 #SBATCH --error=dumped/%A_%a.err
 #SBATCH --job-name=cont_5label_lmbd
@@ -21,14 +21,15 @@ DATA_PATH="/home/gridsan/akyurek/git/rfs-incremental/data"
 mkdir -p $EXP_FOLDER
 
 cnt=0
-for TRLOSS in 1.0 1.1; do
+for TRLOSS in 1.3; do
 for LR in 0.002; do
-for LMBD in 0.2 0.4; do
+for LMBD in 0.2; do
+for LMBDN in 0.05 0.1; do
 for PULL in 0.05; do
 for SEED in {1..10}; do
 (( cnt++ ))
 if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then
-    EXP_NAME=seed_${SEED}_trloss_${TRLOSS}_lmbd_${LMBD}_pull_${PULL}_${SLURM_ARRAY_TASK_ID}
+    EXP_NAME=seed_${SEED}_trloss_${TRLOSS}_lmbd_${LMBD}_lmbdN_${LMBDN}_pull_${PULL}_${SLURM_ARRAY_TASK_ID}
     LOG_STDOUT="${EXP_FOLDER}/${EXP_NAME}.out"
     LOG_STDERR="${EXP_FOLDER}/${EXP_NAME}.err"
     BACKBONE_PATH="${DUMPED_PATH}/backbones/continual/resnet18/${SEED}/resnet18_last.pth"
@@ -50,15 +51,18 @@ if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then
                            --lmbd_reg_transform_w $LMBD \
                            --target_train_loss $TRLOSS \
                            --label_pull $PULL \
-                           --set_seed $SEED > $LOG_STDOUT 2> $LOG_STDERR
+                           --set_seed $SEED \
+                           --lmbd_reg_novel $LMBDN \
+                           --glove > $LOG_STDOUT 2> $LOG_STDERR
 fi
 done
 done
 done
 done
 done
+done
 
-# For debugging.                           
+# # For debugging.                           
 # No language fine tuning few-shot
 # BACKBONE_PATH="${DUMPED_PATH}/backbones/continual/resnet18/2/resnet18_last.pth"
 # python eval_incremental.py --model_path $BACKBONE_PATH \
@@ -75,10 +79,11 @@ done
 #                            --continual \
 #                            --n_queries 25 \
 #                            --num_workers 0 \
-#                            --lmbd_reg_transform_w 0.2 \
-#                            --target_train_loss 1.2 \
+#                            --lmbd_reg_transform_w 0.4 \
+#                            --target_train_loss 4.0 \
 #                            --label_pull 0.05 \
-#                            --set_seed 2
+#                            --set_seed 2 \
+#                            --lmbd_reg_novel 0.2
                            
 
 
