@@ -120,12 +120,10 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
     novel_query_collection_id = None # XXX
     base_batch = next(base_valloader_it) # XXXX Same base batch every time.
     
-    acc_base_ = eval_base(net, 
-                              base_batch, 
-                              criterion)
+    acc_base_ = eval_base(net, base_batch, criterion)
     weighted_avg_l.append(acc_base_)
     
-    
+    # How many episodes/sessions?
     iter_num = opt.neval_episodes
     if opt.continual:
         iter_num = 8
@@ -146,8 +144,32 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
             prev_vocab_base = vocab_base
             prev_vocab_novel = vocab_novel
         vocab_base, vocab_all, vocab_novel, orig2id = get_vocabs(base_val_loader, meta_valloader, query_ys)
+
+        if idx == 0:
+            orig_base_num = len(vocab_base)
         if idx > 0:
             vocab_base = prev_vocab_base + prev_vocab_novel
+        
+        if idx == 1:
+            novel_weight_to_reserve = net.classifier.weight.clone().detach()[-opt.n_ways:,:].requires_grad_(False)
+            novel_bias_to_reserve = None
+            if base_bias is not None:
+                novel_bias_to_reserve = net.classifier.bias.clone().detach()[-opt.n_ways:].requires_grad_(False)
+            print(f"Novel weight to reserve is of shape {novel_weight_to_reserve.shape} at session {idx}.")
+        if idx > 1:
+            new_novel_set = net.classifier.weight.clone().detach()[-opt.n_ways:,:].requires_grad_(False)
+            novel_weight_to_reserve = torch.cat((novel_weight_to_reserve, new_novel_set), 0)
+            if base_bias is not None:
+                new_novel_set_bias = net.classifier.bias.clone().detach()[-opt.n_ways:].requires_grad_(False)
+                novel_bias_to_reserve = torch.cat((novel_bias_to_reserve, new_novel_set_bias), 0)
+            
+            print(f"Novel weight to reserve is of shape {novel_weight_to_reserve.shape} at session {idx}.")
+        
+            
+#         if idx > 0:
+#             with torch.no_grad():
+#                 base_weight = torch.cat((base_weight, 
+#                                          net.classifier.weight.clone().detach()[-len(vocab_novel):].requires_grad_(False)), 0)
 
         # Get sorted numeric labels, create a mapping that maps the order to actual label
         novel_labels = np.sort(np.unique(query_ys)) # true labels of novel samples.
@@ -184,8 +206,11 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
                 lang_puller = LangPuller(opt, vocab_base, vocab_novel)
             else:
                 lang_puller.update_novel_embeds(vocab_novel)
+                
+            if opt.attraction_override == "mapping_linear_label2image":
+                lang_puller.create_pulling_mapping(ckpt[opt.attraction_override])
 
-            pullers = lang_puller(base_weight)
+            pullers = lang_puller(base_weight[:orig_base_num, :])
 
             if opt.attraction_override == "random_uniform":
                 with torch.no_grad():
@@ -247,20 +272,16 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
                 if epoch % 10 == 0:
                     print("LMBD: ", lmbd_reg.item())
                 loss += lmbd_reg
+                
+            if opt.lmbd_reg_novel is not None and idx > 0:
+                lmbd_reg2 = net.reglossnovel(opt.lmbd_reg_novel,
+                                             novel_weight_to_reserve,
+                                             novel_bias_to_reserve)
+                if epoch % 10 == 0:
+                    print("LMBDN: ", lmbd_reg.item())
+                loss += lmbd_reg2
 
             if opt.label_pull is not None and opt.pulling == "regularize":
-                
-                pullers = lang_puller(base_weight)
-                
-                if opt.attraction_override == "random_uniform":
-                    with torch.no_grad():
-                        num_base = base_weight.size(0)
-                        device = base_weight.device
-                        rand_weights = torch.from_numpy(np.random.uniform(0,1,num_base))
-                        rand_weights /= torch.sum(rand_weights)
-                        rand_weights = rand_weights.float().to(device)
-                        pullers = rand_weights @ base_weight
-                
                 
                 reg = lang_puller.loss1(opt.label_pull, 
                                         pullers,
