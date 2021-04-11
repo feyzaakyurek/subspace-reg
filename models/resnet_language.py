@@ -33,10 +33,18 @@ class Pusher:
         reg = -push_away * torch.norm(selected - novel_weight)
         return reg
 
+class LinearMap(nn.Module):
+    def __init__(self, indim, outdim):
+        super(LinearMap, self).__init__()
+        self.map = nn.Linear(indim, outdim)
+        
+    def forward(self, x):
+        return self.map(x)
         
 class LangPuller(nn.Module):
     def __init__(self,opt, vocab_base, vocab_novel):
         super(LangPuller, self).__init__()
+        self.mapping_model = None
         self.opt = opt
         dim = opt.word_embed_size # TODO
 
@@ -77,12 +85,34 @@ class LangPuller(nn.Module):
             self.novel_embeds = self.novel_embeds[:,:300]
 #         self.novel_embeds = torch.cat((self.novel_embeds, new_novel_embeds), 0)
 
+    def create_pulling_mapping(self, state_dict, base_weight_size=640):
+        indim = self.novel_embeds.size(1)
+        outdim = base_weight_size
+        self.mapping_model = LinearMap(indim, outdim)
+        self.mapping_model.load_state_dict(state_dict)
+        self.mapping_model = self.mapping_model.cuda()
+        
+        
+#     def forward(self, base_weight, mask=False):
+#         scores = self.novel_embeds @ torch.transpose(self.base_embeds, 0, 1)
+#         if mask:
+#             scores.fill_diagonal_(-9999)
+#         scores = self.softmax(scores)
+#         return scores @ base_weight # 5 x 640 for fine-tuning.
     def forward(self, base_weight, mask=False):
-        scores = self.novel_embeds @ torch.transpose(self.base_embeds, 0, 1)
-        if mask:
-            scores.fill_diagonal_(-9999)
-        scores = self.softmax(scores)
-        return scores @ base_weight # 5 x 640 for fine-tuning.
+        if self.mapping_model is None:
+            # Default way of computing pullers is thru label similarity.
+            scores = self.novel_embeds @ torch.transpose(self.base_embeds, 0, 1)
+            if mask:
+                scores.fill_diagonal_(-9999)
+            scores = self.softmax(scores)
+            return scores @ base_weight # 5 x 640 for fine-tuning.
+        else:
+            # A mapping model is provided input = novel labels
+            # output = pullers
+            with torch.no_grad():
+                inspired = self.mapping_model(self.novel_embeds)
+            return inspired
 
     def loss1(self, pull, inspired, weights):
 #         return torch.exp(pull) * self.mse(weights, inspired)
@@ -404,6 +434,14 @@ class ResNet(nn.Module):
         if base_bias is not None:
             reg += lmbd * torch.norm(self.classifier.bias[:base_weight.size(0)] - base_bias)**2
         return reg
+    
+    def reglossnovel(self, lmbd, novel_weight, novel_bias=None):
+        rng1, rng2 = self.num_classes, self.num_classes + novel_weight.size(0)
+        reg = lmbd * torch.norm(self.classifier.weight[rng1:rng2, :] - novel_weight) #**2??
+        if novel_bias is not None:
+            reg += lmbd * torch.norm(self.classifier.bias[rng1:rng2, :] - novel_bias)**2
+        return reg
+    
 
 class BasicBlock(nn.Module):
     expansion = 1
