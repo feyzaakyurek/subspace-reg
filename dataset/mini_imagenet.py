@@ -1,4 +1,5 @@
 import os
+import sys
 import pickle
 from PIL import Image
 import numpy as np
@@ -8,6 +9,7 @@ import torchvision.transforms as transforms
 import warnings
 import re
 import ipdb
+
 # torch.multiprocessing.set_sharing_strategy('file_system')
 class ImageNet(Dataset):
     def __init__(self, 
@@ -81,7 +83,8 @@ class ImageNet(Dataset):
         if args.continual:
             all_classes = np.arange(100)
             np.random.shuffle(all_classes) # Shuffles in place.
-            basec = all_classes[:60]
+            basec = np.sort(all_classes[:60])
+            
             # Create mapping for base classes as they are not consecutive anymore.
             self.basec_map = dict(zip(basec, np.arange(len(basec))))
             
@@ -130,18 +133,7 @@ class ImageNet(Dataset):
                     if v in valc:
                         new_cat2label[k] = v
                 self.cat2label = new_cat2label
-                
-#             elif split == "test":
-#                 test_samples = [i for i, e in enumerate(data['labels']) if e in testc]
-#                 self.labels = self.labels[test_samples] 
-#                 self.imgs = self.data[test_samples]
-            
-#                 # Set the specific cat2label dict for test classes.
-#                 new_cat2label = {}
-#                 for k,v in self.cat2label:
-#                     if v in testc:
-#                         new_cat2label[k] = v
-#                 self.cat2label = new_cat2label
+
                 
             else:
                 raise ValueError(f"No such split as {split}.")
@@ -156,7 +148,13 @@ class ImageNet(Dataset):
                 if catname in self.cat2label:
                     label = self.cat2label[catname]
                     self.label2human[label]= humanname
-
+        
+        
+#         save_l2h = os.path.join(args.model_path, "label2human.pickle")
+#         with open(save_l2h, "wb") as f:
+#             pickle.dump(dict((k, self.label2human[k]) for k in basec), f)
+#         sys.exit()
+        
         self.global_labels = self.labels
 
         # pre-process for contrastive sampling
