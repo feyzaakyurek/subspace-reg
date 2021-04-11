@@ -118,6 +118,8 @@ def parse_option_eval():
                             help='Disable dropblock.')
         parser.add_argument('--attraction_override', type=str, default=None,
                             help='Instead of label pullers attract to elsewhere.')
+        parser.add_argument('--lmbd_reg_novel',  type=float, default=None,
+                            help='regularization for the novel classes in previous sessions.')
 
 
         if parser.parse_known_args()[0].label_pull is not None:
