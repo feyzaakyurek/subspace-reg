@@ -156,8 +156,6 @@ def main():
     # routine: supervised pre-training
     for epoch in range(1, opt.epochs + 1):
 #         print("Before Epoch {}".format(epoch))
-#         ipdb.set_trace()
-
 
         if opt.cosine:
             scheduler.step()
@@ -188,6 +186,9 @@ def main():
                 'epoch': epoch,
                 'model': model.state_dict() if opt.n_gpu <= 1 else model.module.state_dict(),
             }
+            if opt.continual:
+                state['training_classes'] = train_loader.dataset.basec_map
+                state['label2human'] = train_loader.dataset.label2human
             save_file = os.path.join(opt.model_path, 'ckpt_epoch_{epoch}.pth'.format(epoch=epoch))
             torch.save(state, save_file)
 
@@ -196,6 +197,9 @@ def main():
         'opt': opt,
         'model': model.state_dict() if opt.n_gpu <= 1 else model.module.state_dict(),
     }
+    if opt.continual:
+        state['training_classes'] = train_loader.dataset.basec_map
+        state['label2human'] = train_loader.dataset.label2human
     save_file = os.path.join(opt.model_path, '{}_last.pth'.format(opt.model))
     torch.save(state, save_file)
 
