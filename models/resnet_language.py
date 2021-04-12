@@ -99,13 +99,16 @@ class LangPuller(nn.Module):
         self.mapping_model.load_state_dict(state_dict)
         self.mapping_model = self.mapping_model.cuda()
         
-    def forward(self, base_weight, mask=False):
+    def forward(self, base_weight, mask=False, return_scores=False):
         if self.mapping_model is None:
             # Default way of computing pullers is thru label similarity.
             scores = self.novel_embeds @ torch.transpose(self.base_embeds, 0, 1)
             if mask:
                 scores.fill_diagonal_(-9999)
             scores = self.softmax(scores)
+            
+            if return_scores:
+                return scores
             return scores @ base_weight # 5 x 640 for fine-tuning.
         else:
             # A mapping model is provided input = novel labels
@@ -117,7 +120,11 @@ class LangPuller(nn.Module):
 #         return torch.exp(pull) * self.mse(weights, inspired)
         return pull * torch.norm(inspired - weights)**2
 
-
+    def loss2(self, pull, scores, weights, base_weight):
+        bs = base_weight.unsqueeze(0)
+        w = weights.unsqueeze(1)
+        sum_novel = torch.sum(scores * torch.sum((bs - w)**2, -1))
+        return pull * sum_novel
 
 class LangLinearClassifier(nn.Module):
     def __init__(self, vocab,  load_embeds, dim, description=False,
