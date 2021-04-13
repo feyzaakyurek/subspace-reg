@@ -3,7 +3,7 @@ import numpy as np
 import scipy
 from scipy.stats import t
 from tqdm import tqdm
-import ipdb
+# import ipdb
 import os
 import time
 import copy
@@ -249,8 +249,13 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
         # Fine tuning epochs.
         train_loss = 15
         epoch = 1
-
-        while train_loss > opt.target_train_loss or epoch < opt.novel_epochs + 1:
+        
+        # Stable epochs
+        stable_epochs = 0
+        while stable_epochs < opt.stable_epochs:
+        
+#         while (epoch < opt.max_novel_epochs) and (train_loss > opt.target_train_loss or epoch < opt.novel_epochs + 1):
+#         while train_loss > opt.target_train_loss or epoch < opt.novel_epochs + 1:
 
             freeze_backbone_weights(net, opt, epoch, exclude=["classifier"])
 #             base_weight = classifier.weight.clone().detach().requires_grad_(False)[:len(vocab_base),:] TODO
@@ -301,8 +306,16 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+            
+            
 
             with torch.no_grad():
+                # Check if training converges
+                if abs(loss.item() - train_loss) < opt.convergence_epsilon:
+                    stable_epochs += 1
+                else:
+                    stable_epochs = 0
+                
                 acc1, acc5 = accuracy(output, support_ys_id, topk=(1,5))
                 train_acc, train_loss = acc1[0], loss.item()
                 if epoch % 10 == 0:

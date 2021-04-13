@@ -5,28 +5,25 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:volta:1
-#SBATCH --array=1-20
+#SBATCH --array=1-12
 #SBATCH --output=dumped/%A_%a.out
 #SBATCH --error=dumped/%A_%a.err
 #SBATCH --job-name=cont_5label_lmbd
 
 
 DUMPED_PATH="/home/gridsan/akyurek/git/rfs-incremental/dumped"
-EXP_FOLDER=$DUMPED_PATH/"continual"/"finetune_label_pull"
-# DATA_PATH="/home/gridsan/groups/akyureklab/rfs-incremental/data"
+EXP_FOLDER=$DUMPED_PATH/"continual"/"finetune_label_pull_converge"
 DATA_PATH="/home/gridsan/akyurek/git/rfs-incremental/data"
-# BACKBONE_PATH="${DUMPED_PATH}/backbones/linear/resnet12_miniImageNet_linear_classifier_wbias/resnet12_last.pth"
-# BACKBONE_PATH="${DUMPED_PATH}/backbones/linear/resnet12_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain_classifier_linear_8075566/resnet12_last.pth"
 
 mkdir -p $EXP_FOLDER
 
 cnt=0
-for TRLOSS in 1.3; do
+for TRLOSS in 0.0; do
 for LR in 0.002; do
 for LMBD in 0.2; do
-for LMBDN in 0.05 0.1; do
-for PULL in 0.05; do
-for SEED in {1..10}; do
+for LMBDN in 0.1; do
+for PULL in 0.03 0.05 0.1 0.2 0.4 1.0; do
+for SEED in {2..3}; do
 (( cnt++ ))
 if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then
     EXP_NAME=seed_${SEED}_trloss_${TRLOSS}_lmbd_${LMBD}_lmbdN_${LMBDN}_pull_${PULL}_${SLURM_ARRAY_TASK_ID}
@@ -73,17 +70,19 @@ done
 #                            --classifier linear \
 #                            --eval_mode few-shot-incremental-fine-tune \
 #                            --novel_epochs 20 \
+#                            --max_novel_epochs 400 \
 #                            --learning_rate 0.002 \
 #                            --freeze_backbone_at 1 \
 #                            --test_base_batch_size 2000 \
 #                            --continual \
 #                            --n_queries 25 \
 #                            --num_workers 0 \
-#                            --lmbd_reg_transform_w 0.4 \
-#                            --target_train_loss 4.0 \
-#                            --label_pull 0.05 \
+#                            --lmbd_reg_transform_w 0.2 \
+#                            --target_train_loss 0.0 \
+#                            --label_pull 1.0 \
 #                            --set_seed 2 \
-#                            --lmbd_reg_novel 0.2
+#                            --glove \
+#                            --lmbd_reg_novel 0.1
                            
 
 
