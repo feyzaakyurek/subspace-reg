@@ -11,10 +11,10 @@
 #SBATCH --job-name=tiered_1ft
 
 
-DUMPED_PATH="/home/gridsan/akyurek/git/rfs-incremental/dumped"
+DUMPED_PATH="/raid/lingo/akyurek/git/rfs-incremental/dumped"
 EXP_FOLDER=$DUMPED_PATH/"tiered/finetune_1shot"
 DATA_PATH="/home/gridsan/akyurek/git/rfs-incremental/data"
-BACKBONE_PATH="${DUMPED_PATH}/backbones/tieredImageNet/linear/bias_false/resnet12_last.pth"
+BACKBONE_PATH="${DUMPED_PATH}/backbones/tieredImageNet/linear/bias_false/resnet18_last.pth"
 
 mkdir -p $EXP_FOLDER
 
@@ -44,7 +44,7 @@ done
 done
 done
 
-# For debugging.                           
+# For debugging.
 
 
 # No language fine tuning few-shot
@@ -60,10 +60,10 @@ done
 #                            --lmbd_reg_transform_w 0.5 \
 #                            --weight_decay 5e-3 \
 #                            --target_train_loss 0.3
-                           
+
 
 
 # Checklist to run an array job.
 # 1. Make sure total number of experiments matches the array param in sbatch.
 # 2. Make sure the order that params are written to file matches the reassignment.
-# 3. 
+# 3.

@@ -11,10 +11,10 @@
 #SBATCH --job-name=tiered_5ftmore
 
 
-DUMPED_PATH="/home/gridsan/akyurek/git/rfs-incremental/dumped"
+DUMPED_PATH="/raid/lingo/akyurek/git/rfs-incremental/dumped"
 EXP_FOLDER=$DUMPED_PATH/"tiered/finetune_5shot"
-DATA_PATH="/home/gridsan/akyurek/git/rfs-incremental/data"
-BACKBONE_PATH="${DUMPED_PATH}/backbones/tieredImageNet/linear/bias_false/resnet12_last.pth"
+DATA_PATH="/raid/lingo/akyurek/git/rfs-incremental/data"
+BACKBONE_PATH="${DUMPED_PATH}/backbones/tieredImageNet/linear/bias_false/resnet18_last.pth"
 mkdir -p $EXP_FOLDER
 
 cnt=0
@@ -42,7 +42,7 @@ done
 done
 done
 
-# For debugging.                           
+# For debugging.
 
 # No language fine tuning few-shot
 # python eval_incremental.py --model_path $BACKBONE_PATH \
@@ -56,16 +56,16 @@ done
 #                            --freeze_backbone_at 1 \
 #                            --lmbd_reg_transform_w 1.0 \
 #                            --target_train_loss 1.5
-                           
+
 
 
 # Checklist to run an array job.
 # 1. Make sure total number of experiments matches the array param in sbatch.
 # 2. Make sure the order that params are written to file matches the reassignment.
-# 3. 
+# 3.
 
 
-# BACKBONE_PATH="${DUMPED_PATH}/backbones/label+desc/resnet12_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain_layer_${LAYER}_multip_${MULTIPFC}/resnet12_last.pth" # label+desc
+# BACKBONE_PATH="${DUMPED_PATH}/backbones/label+desc/resnet18_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain_layer_${LAYER}_multip_${MULTIPFC}/resnet18_last.pth" # label+desc
 ##export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 # # Start (or restart) experiment
 # date >> $LOG_STDOUT
@@ -75,18 +75,18 @@ done
 # echo "SLURM Job ID : $SLURM_JOB_ID" >> $LOG_STDOUT
 # echo "SBATCH script: slurm_run.sh" >> $LOG_STDOUT
 
-# python eval_incremental.py --model_path dumped/ekin_dumped/resnet12_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain_layer_${LAYER}_multip_${MULTIPFC}/resnet12_last.pth --data_root data --n_shots 5 --eval_mode few-shot-language-incremental --classifier description-linear --novel_epochs 14 --learning_rate 0.001 --freeze_backbone --lmbd_reg_transform_w 0.01 --target_train_loss 0.6 --prefix_label --multip_fc $MULTIPFC --transformer_layer $LAYER
+# python eval_incremental.py --model_path dumped/ekin_dumped/resnet18_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain_layer_${LAYER}_multip_${MULTIPFC}/resnet18_last.pth --data_root data --n_shots 5 --eval_mode few-shot-language-incremental --classifier description-linear --novel_epochs 14 --learning_rate 0.001 --freeze_backbone --lmbd_reg_transform_w 0.01 --target_train_loss 0.6 --prefix_label --multip_fc $MULTIPFC --transformer_layer $LAYER
 
 # export WANDB_MODE=dryrun
 # python train_supervised.py --trial pretrain --model_path dumped --tb_path tb --data_root data --classifier description-linear --desc_embed_model bert-base-cased --prefix_label --multip_fc $MULTIPFC --transformer_layer $LAYER
 
 
-# python eval_incremental.py --model_path dumped/ekin_dumped/resnet12_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain_layer_6_multip_0.1/resnet12_last.pth --data_root data --n_shots 5 --eval_mode few-shot-language-incremental --classifier description-linear --novel_epochs 14 --learning_rate 0.001 --num_novel_combs 599 --freeze_backbone --lmbd_reg_transform_w 0.01 --target_train_loss 0.6 --prefix_label --multip_fc 0.1 --transformer_layer 6
+# python eval_incremental.py --model_path dumped/ekin_dumped/resnet18_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain_layer_6_multip_0.1/resnet18_last.pth --data_root data --n_shots 5 --eval_mode few-shot-language-incremental --classifier description-linear --novel_epochs 14 --learning_rate 0.001 --num_novel_combs 599 --freeze_backbone --lmbd_reg_transform_w 0.01 --target_train_loss 0.6 --prefix_label --multip_fc 0.1 --transformer_layer 6
 
 # for LMBD in 0.1 0.2 0.3; do
 #     for TRLOSS in 0.5 0.6; do
 #         for NOVELEPOCH in 20; do
-#             for LR in 0.002; do 
+#             for LR in 0.002; do
 #                 echo "${LMBD} ${TRLOSS} ${NOVELEPOCH} ${LR}" >> $FILE
 #             done
 #         done
@@ -95,11 +95,11 @@ done
 
 
 # # Read the SLURM_ARRAY_TASK_ID line from the params file.
-# LINE=$(sed "${SLURM_ARRAY_TASK_ID}q;d" $FILE) 
+# LINE=$(sed "${SLURM_ARRAY_TASK_ID}q;d" $FILE)
 # read -ra PARAMS<<< "$LINE"
 
 # FILE="$DUMPED_PATH/${SLURM_ARRAY_TASK_ID}_temp_hyperparameters.txt"
-# rm $FILE 
+# rm $FILE
 
 
 
