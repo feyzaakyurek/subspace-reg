@@ -124,7 +124,7 @@ def parse_option_eval():
         parser.add_argument('--stable_epochs', type=int, default=10,
                             help='How many stable epochs before stopping.')
         parser.add_argument('--convergence_epsilon', type=float, default=1e-4)
-
+        parser.add_argument('--temperature', type=float, default=5)
 
         if parser.parse_known_args()[0].label_pull is not None:
             parser.add_argument('--pulling', type=str, default="regularize",

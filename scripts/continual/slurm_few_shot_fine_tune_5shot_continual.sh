@@ -5,14 +5,14 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:volta:1
-#SBATCH --array=1-40
+#SBATCH --array=1-20
 #SBATCH --output=dumped/%A_%a.out
 #SBATCH --error=dumped/%A_%a.err
 #SBATCH --job-name=cont_5ft_lmbdnovel
 
 
 DUMPED_PATH="/home/gridsan/akyurek/git/rfs-incremental/dumped"
-EXP_FOLDER=$DUMPED_PATH/"continual"/"finetune_lmbd_novel"
+EXP_FOLDER=$DUMPED_PATH/"continual"/"finetune_converge"
 # DATA_PATH="/home/gridsan/groups/akyureklab/rfs-incremental/data"
 DATA_PATH="/home/gridsan/akyurek/git/rfs-incremental/data"
 # BACKBONE_PATH="${DUMPED_PATH}/backbones/linear/resnet12_miniImageNet_linear_classifier_wbias/resnet12_last.pth"
@@ -21,14 +21,15 @@ DATA_PATH="/home/gridsan/akyurek/git/rfs-incremental/data"
 mkdir -p $EXP_FOLDER
 
 cnt=0
-for TRLOSS in 0.4 0.5; do
+for TRLOSS in 0.0; do
 for LR in 0.002; do
 for LMBD in 0.2; do
 for LMBDN in 0.1 0.05; do
 for SEED in {1..10}; do
+for WD in 1e-3 2e-3; do
 (( cnt++ ))
 if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then
-    EXP_NAME=seed_${SEED}_trloss_${TRLOSS}_lmbd_${LMBD}_lmbdN_${LMBDN}_${SLURM_ARRAY_TASK_ID}
+    EXP_NAME=seed_${SEED}_trloss_${TRLOSS}_lmbd_${LMBD}_lmbdN_${LMBDN}_wd_${WD}_${SLURM_ARRAY_TASK_ID}
     LOG_STDOUT="${EXP_FOLDER}/${EXP_NAME}.out"
     LOG_STDERR="${EXP_FOLDER}/${EXP_NAME}.err"
     BACKBONE_PATH="${DUMPED_PATH}/backbones/continual/resnet18/${SEED}/resnet18_last.pth"
@@ -50,8 +51,10 @@ if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then
                            --lmbd_reg_transform_w $LMBD \
                            --target_train_loss $TRLOSS \
                            --set_seed $SEED \
-                           --lmbd_reg_novel $LMBDN > $LOG_STDOUT 2> $LOG_STDERR
+                           --lmbd_reg_novel $LMBDN \
+                           --weight_decay $WD > $LOG_STDOUT 2> $LOG_STDERR
 fi
+done
 done
 done
 done

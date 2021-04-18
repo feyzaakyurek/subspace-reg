@@ -3,7 +3,7 @@ import numpy as np
 import scipy
 from scipy.stats import t
 from tqdm import tqdm
-# import ipdb
+import ipdb
 import os
 import time
 import copy
@@ -120,6 +120,7 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
     novel_query_collection_id = None # XXX
     base_batch = next(base_valloader_it) # XXXX Same base batch every time.
     
+    # Initial validation on base samples.
     acc_base_ = eval_base(net, base_batch, criterion)
     weighted_avg_l.append(acc_base_)
     
@@ -144,7 +145,9 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
             prev_vocab_base = vocab_base
             prev_vocab_novel = vocab_novel
         vocab_base, vocab_all, vocab_novel, orig2id = get_vocabs(base_val_loader, meta_valloader, query_ys)
-
+        print("Vocab base: ", vocab_base)
+        print("Vocab novel: ", vocab_novel)
+#         ipdb.set_trace()
         if idx == 0:
             orig_base_num = len(vocab_base)
         if idx > 0:
@@ -173,6 +176,7 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
 
         # Get sorted numeric labels, create a mapping that maps the order to actual label
         novel_labels = np.sort(np.unique(query_ys)) # true labels of novel samples.
+        print("Novel labels: ", novel_labels)
 #         orig2id = dict(zip(novel_labels, len(vocab_base) + np.arange(len(novel_labels))))
         
         # Map the labels to their new form.

@@ -5,7 +5,7 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:volta:1
-#SBATCH --array=1-12
+#SBATCH --array=1-20
 #SBATCH --output=dumped/%A_%a.out
 #SBATCH --error=dumped/%A_%a.err
 #SBATCH --job-name=cont_5label_map
@@ -21,8 +21,8 @@ for TRLOSS in 0.0; do
 for LR in 0.002; do
 for LMBD in 0.2; do
 for LMBDN in 0.1; do
-for PULL in 0.03 0.05 0.1 0.2 0.4 1.0; do
-for SEED in {2..3}; do
+for PULL in 0.06 0.08; do
+for SEED in {1..10}; do
 (( cnt++ ))
 if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then
     EXP_NAME=seed_${SEED}_trloss_${TRLOSS}_lmbd_${LMBD}_lmbdN_${LMBDN}_pull_${PULL}_${SLURM_ARRAY_TASK_ID}

@@ -6,7 +6,7 @@ import math
 import numpy as np
 import os
 import pickle
-# import ipdb
+import ipdb
 
 from models.util import get_embeds
 
@@ -46,6 +46,9 @@ class LangPuller(nn.Module):
         super(LangPuller, self).__init__()
         self.mapping_model = None
         self.opt = opt
+        self.vocab_base = vocab_base
+        self.vocab_novel = vocab_novel
+        self.temp = opt.temperature
         dim = opt.word_embed_size # TODO
 
         # Retrieve novel embeds
@@ -105,7 +108,7 @@ class LangPuller(nn.Module):
             scores = self.novel_embeds @ torch.transpose(self.base_embeds, 0, 1)
             if mask:
                 scores.fill_diagonal_(-9999)
-            scores = self.softmax(scores)
+            scores = self.softmax(scores / self.temp)
             return scores @ base_weight # 5 x 640 for fine-tuning.
         else:
             # A mapping model is provided input = novel labels
