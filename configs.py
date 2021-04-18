@@ -3,7 +3,7 @@ from dataset.transform_cfg import transforms_options, transforms_list
 from models import model_pool
 
 import os
-import torch 
+import torch
 import subprocess
 
 
@@ -90,8 +90,8 @@ def parse_option_eval():
 #         parser.add_argument('--lang_classifier_bias', action='store_true',
 #                             help='Use of bias in lang classifier.')
 #         parser.add_argument('--multip_fc', type=float, default=0.05) # should be read from the loaded model.
-        parser.add_argument('--diag_reg', type=float, default=0.05)
-        parser.add_argument('--attention', type=str, choices=["sum","concat","context"], 
+        parser.add_argument('--diag_reg', type=float, default=None)
+        parser.add_argument('--attention', type=str, choices=["sum","concat","context"],
                             default=None, help='Use of attention in lang classifier.')
         parser.add_argument('--orig_alpha', type=float, default=1.0)
         parser.add_argument('--transform_query_size', type=int, default=None, help='Output size of key, query, value in attention.')
@@ -209,8 +209,8 @@ def parse_option_supervised():
                         choices=['linear', 'lang-linear', 'description-linear'])
     parser.add_argument('-t', '--trial', type=str, default='1', help='the experiment id')
 
-    if parser.parse_known_args()[0].classifier in ["linear"]:
-        parser.add_argument('--no_linear_bias', action='store_true', help='Do not use bias in linear classifier.')
+    #if parser.parse_known_args()[0].classifier in ["linear"]:
+    parser.add_argument('--no_linear_bias', action='store_true', help='Do not use bias in linear classifier.')
 
     parser.add_argument('--augment_pretrain_wtrainb', action='store_true', help='use train b classes too.')
 
@@ -293,12 +293,12 @@ def parse_option_supervised():
                                                                                 opt.multip_fc,
                                                                                 opt.prefix_label)
     elif opt.classifier == "lang-linear":
-        opt.model_name = '{}_{}_classifier_{}_multipfc_{}_{}'.format(opt.dataset, opt.model,
+        opt.model_name = '{}_{}_classifier_{}_multipfc_{}'.format(opt.dataset, opt.model,
                                                                   opt.classifier,
                                                                   opt.multip_fc)
     else:
-        opt.model_name = '{}_{}_classifier_{}'.format(opt.dataset, 
-                                                      opt.model, 
+        opt.model_name = '{}_{}_classifier_{}'.format(opt.dataset,
+                                                      opt.model,
                                                       opt.classifier)
 
     opt.tb_folder = os.path.join(opt.tb_path, opt.model_name)

@@ -14,15 +14,15 @@ class LangPuller(nn.Module):
     def __init__(self,opt, vocab_base, vocab_novel):
         super(LangPuller, self).__init__()
         dim = opt.word_embed_size # TODO
-        
+
         # Retrieve novel embeds
         embed_pth = os.path.join(opt.word_embed_path, "{0}_dim{1}.pickle".format(opt.dataset, dim)) # TODO
         print("Creating lang puller.")
         self.novel_embeds = get_embeds(embed_pth, vocab_novel).float().cuda()
-        
+
         # Retrieve base embeds
         if opt.use_synonyms:
-            embed_pth = os.path.join(opt.word_embed_path, 
+            embed_pth = os.path.join(opt.word_embed_path,
                                      "{0}_dim{1}_base_synonyms.pickle".format(opt.dataset, dim)) # TOdo
             with open(embed_pth, "rb") as openfile:
                 label_syn_embeds = pickle.load(openfile)
@@ -30,10 +30,10 @@ class LangPuller(nn.Module):
             for base_label in vocab_base:
                 base_embeds.append(label_syn_embeds[base_label])
         else:
-            embed_pth = os.path.join(opt.word_embed_path, 
+            embed_pth = os.path.join(opt.word_embed_path,
                                      "{0}_dim{1}.pickle".format(opt.dataset, dim)) # TODO
             base_embeds = get_embeds(embed_pth, vocab_base)
-            
+
         self.base_embeds = base_embeds.float().cuda()
         # This will be used to compute label attractors.
         self.softmax = nn.Softmax(dim=1)
@@ -45,15 +45,15 @@ class LangPuller(nn.Module):
     def forward(self, base_weight, mask=False):
         scores = self.novel_embeds @ torch.transpose(self.base_embeds, 0, 1)
         if mask:
-            scores.fill_diagonal_(-9999) 
+            scores.fill_diagonal_(-9999)
         scores = self.softmax(scores)
         return scores @ base_weight # 5 x 640 for fine-tuning.
-    
+
     def loss1(self, pull, inspired, weights):
 #         return torch.exp(pull) * self.mse(weights, inspired)
         return pull * torch.norm(inspired - weights)**2
 
-        
+
 class LangLinearClassifier(nn.Module):
     def __init__(self, vocab,  load_embeds, dim, description=False,
                  cdim=640, bias=False, verbose=True, multip_fc=0.15,
@@ -95,12 +95,17 @@ class LangLinearClassifier(nn.Module):
             nn.init.uniform_(embed_tensor, -bound, bound)
             for (i,token) in enumerate(vocab):
                 words = token.split(' ')
+                current = None
                 for w in words:
                     try:
-                        embed_tensor[i] += torch.from_numpy(pretrained_embedding[w])
+                        if current is None:
+                            current = torch.from_numpy(pretrained_embedding[w])
+                        else:
+                            current += torch.from_numpy(pretrained_embedding[w])
                     except KeyError:
                         continue
-                embed_tensor[i] /= len(words)
+                if current is not None:
+                    embed_tensor[i] = current / len(words)
 
         self.embed = nn.Parameter(embed_tensor * multip_fc, requires_grad=False)
 
@@ -145,30 +150,30 @@ class LangLinearClassifier(nn.Module):
             return self.transform_W_output #TODO
         else:
             return self.embed @ self.transform_W
-        
+
     def augment_classifier_(self, novel_labels, embed_path):
         base_device = self.embed.device
         novel_embeds = get_embeds(embed_path, novel_labels).to(base_device)
         self.embed = nn.Parameter(torch.cat([self.embed, novel_embeds], 0),
                                   requires_grad=False)
-        
+
         if self.attention is not None:
-            novel_classifier = nn.Linear(self.transform_W_output.size(1), 
-                                         len(novel_labels), 
+            novel_classifier = nn.Linear(self.transform_W_output.size(1),
+                                         len(novel_labels),
                                          bias=(self.bias is not None)) # TODO!!
 
             novel_weight = novel_classifier.weight.detach()
-            augmented_weight = torch.cat([self.transform_W_output.detach(), 
+            augmented_weight = torch.cat([self.transform_W_output.detach(),
                                           novel_weight.to(base_device)], 0)
             self.transform_W_output = nn.Parameter(augmented_weight, requires_grad=True)
-            
+
             if self.bias is not None:
                 novel_bias = novel_classifier.bias.detach()
-                self.bias = torch.cat([self.bias.detach(), 
+                self.bias = torch.cat([self.bias.detach(),
                                        novel_bias.to(base_device)], 0)
-                
-                
-                
+
+
+
     def forward(self, x, get_alphas=False):
         if self.attention is not None:
             if self.transform_query_size is not None:
@@ -192,9 +197,9 @@ class LangLinearClassifier(nn.Module):
             raise NotImplementedError()
 
         return F.linear(x, self.weight, self.bias)
-    
-    
-    
+
+
+
 
 class ResNet(nn.Module):
 
@@ -319,7 +324,7 @@ class ResNet(nn.Module):
             return [f0, f1, f2, f3, feat], x
         else:
             return x
-        
+
     def _get_base_weights(self):
         base_weight = self.classifier.weight.detach().clone().requires_grad_(False)
         if self.classifier.bias is not None:
@@ -327,12 +332,12 @@ class ResNet(nn.Module):
             return base_weight, base_bias
         else:
             return base_weight, None
-    
-    def augment_base_classifier_(self, 
-                                 n, 
-                                 novel_weight=None, 
+
+    def augment_base_classifier_(self,
+                                 n,
+                                 novel_weight=None,
                                  novel_bias=None):
-        
+
         # Create classifier weights for novel classes.
         base_device = self.classifier.weight.device
         base_weight = self.classifier.weight.detach()
@@ -340,20 +345,21 @@ class ResNet(nn.Module):
             base_bias = self.classifier.bias.detach()
         else:
             base_bias = None
-            
+
         if novel_weight is None:
             novel_classifier = nn.Linear(base_weight.size(1), n, bias=(base_bias is not None)) # TODO!!
             novel_weight     = novel_classifier.weight.detach()
             if base_bias is not None and novel_bias is None:
                 novel_bias = novel_classifier.bias.detach()
-        
+
         augmented_weight = torch.cat([base_weight, novel_weight.to(base_device)], 0)
         self.classifier.weight = nn.Parameter(augmented_weight, requires_grad=True)
-            
+
         if base_bias is not None:
             augmented_bias = torch.cat([base_bias, novel_bias.to(base_device)])
             self.classifier.bias = nn.Parameter(augmented_bias, requires_grad=True)
-            
+
+
     def cut_last_layer(self, n):
         current_size = self.classifier.weight.size(0)
         self.num_classes = current_size - n
@@ -362,22 +368,24 @@ class ResNet(nn.Module):
         if self.classifier.bias is not None:
             self.classifier.bias = nn.Parameter(self.classifier.bias[:self.num_classes],
                                                 requires_grad=True)
-            
-            
+
+
+
     def regloss(self, lmbd, base_weight, base_bias=None):
         current = self.classifier.weight[:base_weight.size(0),:]
-        reg = lmbd * torch.norm(current - base_weight) 
+        reg = lmbd * torch.norm(current - base_weight)
 #         reg = np.exp(lmbd) * self.mse1(current, base_weight)
 #         ipdb.set_trace()
         if base_bias is not None:
             current_bias = self.classifier.bias[:base_weight.size(0)]
-            reg = lmbd * torch.norm(current_bias - base_bias) 
+            reg = lmbd * torch.norm(current_bias - base_bias)
 #             reg +=  np.exp(lmbd) * self.mse2(current_bias, base_bias)
         return reg
+
         #reg = lmbd * torch.norm(self.classifier.weight[:base_weight.size(0),:] - base_weight) #**2??
-        
-        
-        
+
+
+
 class BasicBlock(nn.Module):
     expansion = 1
 

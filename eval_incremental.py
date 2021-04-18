@@ -37,8 +37,8 @@ def main():
     opt = parse_option_eval()
 
     # Add git commit hash
-    process = subprocess.Popen(['git', 'rev-parse', '--short', 'HEAD'], 
-                               shell=False, 
+    process = subprocess.Popen(['git', 'rev-parse', '--short', 'HEAD'],
+                               shell=False,
                                stdout=subprocess.PIPE)
     git_head_hash = process.communicate()[0].strip()
     opt.git_head_hash = git_head_hash.decode()
@@ -160,14 +160,15 @@ def main():
 
     # Load model if available, check bias.
     ckpt = torch.load(opt.model_path)
-        
+
     # If language classifiers are used, then we'll need the embeds recorded.
     if opt.classifier in ["lang-linear", "description-linear"]:
         opt.multip_fc = ckpt['opt'].multip_fc
-        opt.diag_reg =  0.5 #ckpt['opt'].diag_reg
+        if opt.diag_reg is None:
+            opt.diag_reg = ckpt['opt'].diag_reg
         opt.lang_classifier_bias = ckpt['opt'].lang_classifier_bias
-        
-        
+
+
         # Save full dataset vocab if not available
         vocab_train = [name for name in train_loader.dataset.label2human if name != '']
         vocab_test = [name for name in meta_testloader.dataset.label2human if name != '']
@@ -193,7 +194,7 @@ def main():
         if opt.use_synonyms:
             create_and_save_synonyms(opt, vocab_train, vocab_test, vocab_val)
 
-    
+
 
 
 #         opt.no_linear_bias = ckpt['opt'].no_linear_bias
@@ -216,10 +217,10 @@ def main():
     model = create_model(opt.model, n_cls, opt, vocab=vocab, dataset=opt.dataset)
     print("Loading model...")
     model.load_state_dict(ckpt['model'])
-    
+
     if opt.dataset == "tieredImageNet" and opt.classifier == "linear":
         model.cut_last_layer(151)
-    
+
 #     try:
 #         model.load_state_dict(ckpt['model'])
 #     except Exception as e:
