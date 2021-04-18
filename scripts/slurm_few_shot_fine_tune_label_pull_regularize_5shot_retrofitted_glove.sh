@@ -8,62 +8,68 @@
 #SBATCH --array=1-4
 #SBATCH --output=dumped/%A_%a.out
 #SBATCH --error=dumped/%A_%a.err
-#SBATCH --job-name=ft_1s_neweps
+#SBATCH --job-name=pull_retro5
 
 
 DUMPED_PATH="/home/gridsan/akyurek/git/rfs-incremental/dumped"
-EXP_FOLDER=$DUMPED_PATH/"1shot/finetune_new_episodes/"
+EXP_FOLDER=$DUMPED_PATH/"finetune_label_pull_retrofitted_glove_new_episodes"
 DATA_PATH="/home/gridsan/groups/akyureklab/rfs-incremental/data"
-# BACKBONE_PATH="${DUMPED_PATH}/backbones/linear/resnet12_miniImageNet_linear_classifier_wbias/resnet12_last.pth"
+# # BACKBONE_PATH="${DUMPED_PATH}/backbones/linear/resnet12_miniImageNet_linear_classifier_wbias/resnet12_last.pth"
 BACKBONE_PATH="${DUMPED_PATH}/backbones/linear/resnet12_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain_classifier_linear_8075566/resnet12_last.pth"
 
 mkdir -p $EXP_FOLDER
 
+PPDB="ppdb-xl"
+WSYN="wordnet-synonyms"
+WSYNP="wordnet-synonyms+"
+RETRO="word_embeds_retrofitted"
+
 cnt=0
-for LMBD in 0.1 0.2; do
-for TRLOSS in 0.1; do
-for LR in 0.003 0.006; do
+for LMBD in 0.2; do
+for TRLOSS in 0.6 0.7; do
+for PULL in 0.03 0.05; do
+for EMBED in $WSYNP; do
 (( cnt++ ))
 if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then
-    EXP_NAME=lmbd_${LMBD}_trloss_${TRLOSS}_lr_${LR}_maxnovelep_1000_${SLURM_ARRAY_TASK_ID}
+    EXP_NAME=glove_${EMBED}_lambda_${LMBD}_trloss_${TRLOSS}_pull_${PULL}_$SLURM_ARRAY_TASK_ID
     LOG_STDOUT="${EXP_FOLDER}/${EXP_NAME}.out"
     LOG_STDERR="${EXP_FOLDER}/${EXP_NAME}.err"
     python eval_incremental.py --model_path $BACKBONE_PATH \
                                --data_root $DATA_PATH \
-                               --n_shots 1 \
+                               --n_shots 5 \
                                --eval_mode few-shot-incremental-fine-tune \
                                --classifier linear \
                                --min_novel_epochs 20 \
-                               --learning_rate $LR \
+                               --glove \
+                               --learning_rate 0.002 \
                                --use_episodes \
-                               --max_novel_epochs 1000 \
-                               --lmbd_reg_transform_w $LMBD \
                                --freeze_backbone_at 1 \
+                               --label_pull $PULL \
+                               --pulling regularize \
+                               --word_embed_path $RETRO/$EMBED \
+                               --word_embed_size 300 \
+                               --lmbd_reg_transform_w $LMBD \
                                --target_train_loss $TRLOSS > $LOG_STDOUT 2> $LOG_STDERR
 fi
 done
 done
-done 
+done
+done
+# For debugging. 
 
-# For debugging.                           
-
-
-# No language fine tuning few-shot
+# No language fine tuning few-shot with label pull
 # python eval_incremental.py --model_path $BACKBONE_PATH \
 #                            --data_root $DATA_PATH \
-#                            --n_shots 1 \
-#                            --classifier linear \
+#                            --n_shots 5 \
 #                            --eval_mode few-shot-incremental-fine-tune \
+#                            --classifier linear \
 #                            --novel_epochs 20 \
-#                            --learning_rate 0.003 \
-#                            --neval_episodes 15 \
+#                            --learning_rate 0.002 \
+#                            --use_episodes \
+#                            --neval_episodes 1 \
 #                            --freeze_backbone_at 1 \
-#                            --lmbd_reg_transform_w 0.2 \
-#                            --target_train_loss 0.1
-                           
+#                            --label_pull 0.03 \
+#                            --pulling regularize \
+#                            --lmbd_reg_transform_w 0.3 \
+#                            --target_train_loss 1.1
 
-
-# Checklist to run an array job.
-# 1. Make sure total number of experiments matches the array param in sbatch.
-# 2. Make sure the order that params are written to file matches the reassignment.
-# 3. 

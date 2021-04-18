@@ -5,6 +5,7 @@ import io
 import base64
 from PIL import Image
 import scipy
+from scipy.stats import t
 
 class AverageMeter(object):
     """Computes and stores the average and current value"""

@@ -96,7 +96,7 @@ def parse_option_eval():
         parser.add_argument('--orig_alpha', type=float, default=1.0)
         parser.add_argument('--transform_query_size', type=int, default=None, help='Output size of key, query, value in attention.')
 
-    parser.add_argument('--label_pull', type=float, default=None)
+    
     if parser.parse_known_args()[0].eval_mode in ["few-shot-incremental-fine-tune"]:
         parser.add_argument('--word_embed_size', type=int, default=500,
                             help='Word embedding classifier')
@@ -104,7 +104,15 @@ def parse_option_eval():
                             help='Where to store word embeds pickles for dataset.')
         parser.add_argument('--glove', action='store_true',
                             help='Use of Glove embeds instead of Vico.')
-
+        parser.add_argument('--label_pull', type=float, default=None)
+        parser.add_argument('--push_away', type=float, default=None)
+        parser.add_argument('--attraction_override', type=str, default=None,
+                            help='Instead of label pullers attract to elsewhere.')
+        parser.add_argument('--pull_path_override', type=str, default=None,
+                            help='Load embeds here.')
+        
+        parser.add_argument('--novel_initializer', type=str, default=None,
+                            help='novel weight initialization rule if not random.')
 
         if parser.parse_known_args()[0].label_pull is not None:
             parser.add_argument('--pulling', type=str, default="regularize",
@@ -119,7 +127,10 @@ def parse_option_eval():
                                                   "few_shot_language_pretrain_linear_tune",
                                                   "few-shot-incremental-language-pretrain-linear-tune",
                                                   "hierarchical-incremental-few-shot"]:
-        parser.add_argument('--novel_epochs', type=int, default=15, help='number of epochs for novel support set.')
+        parser.add_argument('--min_novel_epochs', type=int, default=15, help='min number of epochs for novel support set.')
+        parser.add_argument('--max_novel_epochs', type=int, default=400, help='max number of epochs for novel support set.')
+#         parser.add_argument('--novel_epochs', type=int, default=15, help='number of epochs for novel support set.')
+#         parser.add_argument('--max_novel_epochs', type=int, default=400, help='number of epochs for novel support set.')
         parser.add_argument('--learning_rate', type=float, default=0.01, help='learning rate')
         parser.add_argument('--weight_decay', type=float, default=5e-4, help='weight decay')
         parser.add_argument('--momentum', type=float, default=0.9, help='momentum')
