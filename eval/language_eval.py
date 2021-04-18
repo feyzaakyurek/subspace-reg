@@ -32,7 +32,7 @@ import io
 import base64
 
 
-def validate_fine_tune(query_xs, query_ys_id, net, criterion, opt):
+def validate_fine_tune(query_xs, query_ys_id, net, criterion, opt, epoch):
     net.eval()
     with torch.no_grad():
         if torch.cuda.is_available():
@@ -46,11 +46,12 @@ def validate_fine_tune(query_xs, query_ys_id, net, criterion, opt):
             # measure accuracy and record loss
             acc1, acc5 = accuracy(output, query_ys_id, topk=(1, 5))
             query_ys_pred = torch.argmax(output, dim=1).detach().cpu().numpy()
-            print('Test \t'
-                  'Loss {:10.4f}\t'
-                  'Acc@1 {:10.3f}\t'
-                  'Acc@5 {:10.3f}'.format(
-                   loss.item(), acc1[0], acc5[0]))
+            if epoch % 10 == 0:
+                print('Test \t'
+                      'Loss {:10.4f}\t'
+                      'Acc@1 {:10.3f}\t'
+                      'Acc@5 {:10.3f}'.format(
+                       loss.item(), acc1[0], acc5[0]))
 
     return acc1[0], acc5[0], loss.item(), query_ys_pred
 
@@ -160,6 +161,9 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
                 with torch.no_grad():
                     base_av = torch.mean(base_weight,0)
                     pullers = base_av.repeat(pullers.size(0),1)
+            if opt.attraction_override == "separate":
+                with torch.no_grad():
+                    scores = lang_puller(base_weight, return_scores=True)
             if opt.attraction_override == "random_dirichlet":
                 with torch.no_grad():
                     num_base = base_weight.size(0)
@@ -184,7 +188,7 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
 
 
         # Validate before training. TODO
-        test_acc, *_ = validate_fine_tune(query_xs, query_ys_id, net, criterion, opt)
+        test_acc, *_ = validate_fine_tune(query_xs, query_ys_id, net, criterion, opt, 0)
         print('{:25} {:.4f}\n'.format("Novel incremental acc before fine-tune:",
                                       test_acc.item()))
 
@@ -221,17 +225,25 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
 
 
             if opt.label_pull is not None and opt.pulling == "regularize":
-                reg = lang_puller.loss1(opt.label_pull,
+                if opt.attraction_override == "separate":
+                    reg = lang_puller.loss2(opt.label_pull,
+                                            scores,
+                                            net.classifier.weight[len(vocab_base):,:],
+                                            base_weight)
+                else:
+                    reg = lang_puller.loss1(opt.label_pull,
                                             pullers,
                                             net.classifier.weight[len(vocab_base):,:])
-                print("PULL: ", reg.item())
+                if epoch % 10 == 0:
+                    print("PULL: ", reg.item())
                 loss += reg
 
 
             if opt.push_away is not None:
                 reg = pusher.loss1(opt.push_away,
                                      net.classifier.weight[len(vocab_base):,:])
-                print("PUSH: ", reg.item())
+                if epoch % 10 == 0:
+                    print("PUSH: ", reg.item())
                 loss += reg
 
 
@@ -257,7 +269,8 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
                                                                                    query_ys_id,
                                                                                    net,
                                                                                    criterion,
-                                                                                   opt)
+                                                                                   opt,
+                                                                                   epoch)
 
             if opt.track_label_inspired_weights:
                 inspired_weights = label_inspired_weights.clone().cpu().numpy()
@@ -317,7 +330,7 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
                                                    query_ys_id,
                                                    net,
                                                    criterion,
-                                                   opt)
+                                                   opt, epoch)
             pull_avg_score = (pull_acc_base_ + pull_test_acc.item())/2
             pull_running_avg.append(pull_avg_score)
 
@@ -455,7 +468,7 @@ def few_shot_language_incremental_test(net, ckpt, criterion, meta_valloader, bas
         net.classifier.augment_classifier_(vocab_novel, embed_pth)
 
         # Validate before training.
-        test_acc, *_ = validate_fine_tune(query_xs, query_ys_id, net, criterion, opt)
+        test_acc, *_ = validate_fine_tune(query_xs, query_ys_id, net, criterion, opt, 0)
         print('{:25} {:.4f}\n'.format("Novel incremental acc before fine-tune:",test_acc.item()))
 
 
@@ -507,7 +520,7 @@ def few_shot_language_incremental_test(net, ckpt, criterion, meta_valloader, bas
                                                                                    query_ys_id,
                                                                                    net,
                                                                                    criterion,
-                                                                                   opt)
+                                                                                   opt, epoch)
 
             if vis and idx == 0:
                 novel_info = [(idx, vocab_all[query_ys_id[i]], False, vocab_all[query_ys_pred[i]],
