@@ -240,6 +240,7 @@ def main():
     if opt.eval_mode == "few-shot-incremental":
         best_alpha = opt.start_alpha
         best_score = 0.0
+        assert not opt.skip_val
         for alpha in np.arange(opt.start_alpha,opt.end_alpha,opt.inc_alpha):
             start = time.time()
             novel, base = incremental_test(model, meta_valloader, base_val_loader,
@@ -269,11 +270,12 @@ def main():
 
     elif opt.eval_mode == "zero-shot":
         assert opt.classifier in ["lang-linear", "description-linear"]
-        start = time.time()
-        novel = zero_shot_test(model, meta_valloader, opt, is_norm=False)
-        val_time = time.time() - start
-        print('val_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel[0], novel[1], val_time))
-        print('val_score: {:.4f}'.format(novel[0]))
+        if not opt.skip_val:
+            start = time.time()
+            novel = zero_shot_test(model, meta_valloader, opt, is_norm=False)
+            val_time = time.time() - start
+            print('val_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel[0], novel[1], val_time))
+            print('val_score: {:.4f}'.format(novel[0]))
 
         start = time.time()
         novel = zero_shot_test(model, meta_testloader, opt, is_norm=False)
@@ -283,6 +285,7 @@ def main():
 
     elif opt.eval_mode == "zero-shot-incremental":
         assert opt.classifier == "lang-linear"
+        assert not opt.skip_val
         best_alpha = 0.14 #opt.start_alpha
         best_score = 0.0
         for alpha in np.arange(opt.start_alpha,opt.end_alpha,opt.inc_alpha):
@@ -312,19 +315,20 @@ def main():
         assert opt.classifier in ["lang-linear", "description-linear"]
 
         criterion = nn.CrossEntropyLoss()
-        start = time.time()
-        opt.split = "val"
-        novel, base = few_shot_language_incremental_test(model,
-                                                         ckpt,
-                                                         criterion,
-                                                         meta_valloader,
-                                                         base_val_loader,
-                                                         opt)
-        val_time = time.time() - start
-        avg_score = (base[0]+novel[0])/2
-        print('val_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel[0], novel[1], val_time))
-        print('val_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base[0], base[1], val_time))
-        print('val_acc_average: {:.4f}'.format(avg_score))
+        if not opt.skip_val:
+            start = time.time()
+            opt.split = "val"
+            novel, base = few_shot_language_incremental_test(model,
+                                                             ckpt,
+                                                             criterion,
+                                                             meta_valloader,
+                                                             base_val_loader,
+                                                             opt)
+            val_time = time.time() - start
+            avg_score = (base[0]+novel[0])/2
+            print('val_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel[0], novel[1], val_time))
+            print('val_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base[0], base[1], val_time))
+            print('val_acc_average: {:.4f}'.format(avg_score))
 #         run.log({
 #            'val_acc_novel_avg': novel,
 #            'val_acc_base_avg': base,
@@ -351,19 +355,20 @@ def main():
         assert opt.classifier in ["lang-linear", "description-linear"]
 
         criterion = nn.CrossEntropyLoss()
-        start = time.time()
-        opt.split = "val"
-        novel, base = few_shot_language_pretrain_linear_tune(model,
-                                                         ckpt,
-                                                         criterion,
-                                                         meta_valloader,
-                                                         base_val_loader,
-                                                         opt)
-        val_time = time.time() - start
-        avg_score = (base[0]+novel[0])/2
-        print('val_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel[0], novel[1], val_time))
-        print('val_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base[0], base[1], val_time))
-        print('val_acc_average: {:.4f}'.format(avg_score))
+        if not opt.skip_val:
+            start = time.time()
+            opt.split = "val"
+            novel, base = few_shot_language_pretrain_linear_tune(model,
+                                                             ckpt,
+                                                             criterion,
+                                                             meta_valloader,
+                                                             base_val_loader,
+                                                             opt)
+            val_time = time.time() - start
+            avg_score = (base[0]+novel[0])/2
+            print('val_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel[0], novel[1], val_time))
+            print('val_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base[0], base[1], val_time))
+            print('val_acc_average: {:.4f}'.format(avg_score))
 #         run.log({
 #            'val_acc_novel_avg': novel[0],
 #            'val_acc_base_avg': base[0],
@@ -386,34 +391,32 @@ def main():
     elif opt.eval_mode == 'few-shot-incremental-fine-tune':
         assert opt.classifier == "linear"
         criterion = nn.CrossEntropyLoss()
-
-
-        start = time.time()
-        opt.split = "val"
         original_nepisodes = opt.neval_episodes
         opt.neval_episodes = 300
+        if not opt.skip_val:
+            start = time.time()
+            opt.split = "val"
+            (novel, novelstd), (base, basestd), (mean, meanstd)  = few_shot_finetune_incremental_test(model,
+                                                             ckpt,
+                                                             criterion,
+                                                             meta_valloader,
+                                                             base_val_loader,
+                                                             opt)
+            val_time = time.time() - start
+    #         avg_score = (base+novel)/2
+            print('val_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel, novelstd, val_time))
+            print('val_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base, basestd, val_time))
+            print('val_acc_average: {:.4f}, std: {:.4f}, time: {:.1f}'.format(mean, meanstd, val_time))
 
-        (novel, novelstd), (base, basestd), (mean, meanstd)  = few_shot_finetune_incremental_test(model,
-                                                         ckpt,
-                                                         criterion,
-                                                         meta_valloader,
-                                                         base_val_loader,
-                                                         opt)
-        val_time = time.time() - start
-#         avg_score = (base+novel)/2
-        print('val_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel, novelstd, val_time))
-        print('val_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base, basestd, val_time))
-        print('val_acc_average: {:.4f}, std: {:.4f}, time: {:.1f}'.format(mean, meanstd, val_time))
-
-        if opt.save_preds_0:
-            df = few_shot_finetune_incremental_test(model,
-                                                    ckpt,
-                                                    criterion,
-                                                    meta_valloader,
-                                                    base_val_loader,
-                                                    opt,
-                                                    vis=True)
-            df.to_csv(f"vis_{opt.eval_mode}_pulling_{opt.pulling}_{opt.label_pull}_target_loss_{opt.target_train_loss}_synonyms_{opt.use_synonyms}.csv", index=False)
+            if opt.save_preds_0:
+                df = few_shot_finetune_incremental_test(model,
+                                                        ckpt,
+                                                        criterion,
+                                                        meta_valloader,
+                                                        base_val_loader,
+                                                        opt,
+                                                        vis=True)
+                df.to_csv(f"vis_{opt.eval_mode}_pulling_{opt.pulling}_{opt.label_pull}_target_loss_{opt.target_train_loss}_synonyms_{opt.use_synonyms}.csv", index=False)
 
         if not opt.track_weights and not opt.track_label_inspired_weights:
             start = time.time()
@@ -433,15 +436,16 @@ def main():
             print('test_acc_average: {:.4f}, std: {:.4f}, time: {:.1f}'.format(mean, meanstd, test_time))
 
     elif opt.eval_mode == "few-shot":
-        start = time.time()
-        val_acc, val_std = meta_test(model, meta_valloader)
-        val_time = time.time() - start
-        print('val_acc: {:.4f}, val_std: {:.4f}, time: {:.1f}'.format(val_acc, val_std, val_time))
+        if not opt.skip_val:
+            start = time.time()
+            val_acc, val_std = meta_test(model, meta_valloader)
+            val_time = time.time() - start
+            print('val_acc: {:.4f}, val_std: {:.4f}, time: {:.1f}'.format(val_acc, val_std, val_time))
 
-        start = time.time()
-        val_acc_feat, val_std_feat = meta_test(model, meta_valloader, use_logit=False)
-        val_time = time.time() - start
-        print('val_acc_feat: {:.4f}, val_std: {:.4f}, time: {:.1f}'.format(val_acc_feat, val_std_feat, val_time))
+            start = time.time()
+            val_acc_feat, val_std_feat = meta_test(model, meta_valloader, use_logit=False)
+            val_time = time.time() - start
+            print('val_acc_feat: {:.4f}, val_std: {:.4f}, time: {:.1f}'.format(val_acc_feat, val_std_feat, val_time))
 
         start = time.time()
         test_acc, test_std = meta_test(model, meta_testloader)

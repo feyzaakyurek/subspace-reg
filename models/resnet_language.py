@@ -6,7 +6,7 @@ import math
 import numpy as np
 import os
 import pickle
-import ipdb
+# import ipdb
 
 from models.util import get_embeds
 
@@ -93,6 +93,7 @@ class LangPuller(nn.Module):
             self.base_embeds = self.base_embeds[:,:300]
             self.novel_embeds = self.novel_embeds[:,:300]
 
+
     def create_pulling_mapping(self, state_dict, base_weight_size=640):
         indim = self.novel_embeds.size(1)
         outdim = base_weight_size
@@ -114,7 +115,8 @@ class LangPuller(nn.Module):
         else:
             # A mapping model is provided input = novel labels
             # output = pullers
-            inspired = self.mapping_model(self.novel_embeds)
+            with torch.no_grad():
+                inspired = self.mapping_model(self.novel_embeds)
             return inspired
 
     def loss1(self, pull, inspired, weights):

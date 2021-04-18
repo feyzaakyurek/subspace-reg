@@ -1,7 +1,7 @@
 from __future__ import print_function
 import torch
 import pickle
-import ipdb
+# import ipdb
 import numpy as np
 import re
 
@@ -15,8 +15,8 @@ def create_model(name, n_cls, opt, vocab=None, dataset='miniImageNet'):
             print('use imagenet-style resnet50')
             model = model_dict[name](num_classes=n_cls)
         elif name.startswith('resnet') or name.startswith('seresnet'):
-            model = model_dict[name](avg_pool=True, drop_rate=0.1, 
-                                     dropblock_size=5, num_classes=n_cls, 
+            model = model_dict[name](avg_pool=True, drop_rate=0.1,
+                                     dropblock_size=5, num_classes=n_cls,
                                      vocab=vocab, opt=opt) #TODO
         elif name.startswith('wrn'):
             model = model_dict[name](num_classes=n_cls)
@@ -47,7 +47,7 @@ def get_teacher_name(model_path):
             return segments[0]
         else:
             return segments[0] + '_' + segments[1] + '_' + segments[2]
-        
+
 
 def get_embeds(embed_pth, vocab, dim=500, cdim=640):
     '''
@@ -57,13 +57,13 @@ def get_embeds(embed_pth, vocab, dim=500, cdim=640):
     with open(embed_pth, "rb") as openfile:
         embeds_ = pickle.load(openfile)
     embeds = [0] * len(vocab)
-    
+
     # find mean embed
     mean_embed = 0
-    for val in embeds_.values(): 
+    for val in embeds_.values():
         mean_embed += val
     mean_embed = mean_embed / len(embeds_) # sth like zero actually.
- 
+
     for (i,token) in enumerate(vocab):
         words = re.split('\W+', token)
         words = list(filter(lambda a: a != "", words))
@@ -73,5 +73,5 @@ def get_embeds(embed_pth, vocab, dim=500, cdim=640):
             except KeyError:
                 embeds[i] = mean_embed
         embeds[i] /= len(words)
-        
+
     return torch.stack([torch.from_numpy(e) for e in embeds], 0)

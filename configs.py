@@ -96,7 +96,7 @@ def parse_option_eval():
         parser.add_argument('--orig_alpha', type=float, default=1.0)
         parser.add_argument('--transform_query_size', type=int, default=None, help='Output size of key, query, value in attention.')
 
-    
+
     if parser.parse_known_args()[0].eval_mode in ["few-shot-incremental-fine-tune"]:
         parser.add_argument('--word_embed_size', type=int, default=500,
                             help='Word embedding classifier')
@@ -110,7 +110,7 @@ def parse_option_eval():
                             help='Instead of label pullers attract to elsewhere.')
         parser.add_argument('--pull_path_override', type=str, default=None,
                             help='Load embeds here.')
-        
+
         parser.add_argument('--novel_initializer', type=str, default=None,
                             help='novel weight initialization rule if not random.')
 
@@ -147,6 +147,7 @@ def parse_option_eval():
         parser.add_argument('--transformer_layer', type=str, default=6)
         parser.add_argument('--prefix_label', action='store_true', help='append label to the beginning description')
 
+    parser.add_argument('--skip_val', action='store_true', help='skip validation evaluation')
     opt = parser.parse_args()
 
     if 'trainval' in opt.model_path:

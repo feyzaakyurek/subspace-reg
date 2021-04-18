@@ -6,14 +6,12 @@ import pdb
 import os
 from models.resnet_language import LinearMap
 
-WORD_EMBED_PATH = "word_embeds/miniImageNet_dim500.pickle"
-BASE_LABELS = "data/miniImageNet/mini_train_train_human_labels.pickle"
-MODEL_HOME = "dumped/backbones/linear/resnet12_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain_classifier_linear_8075566"
-MODEL_PATH = os.path.join(MODEL_HOME, "resnet12_last.pth")
-SAVE_PATH =os.path.join(MODEL_HOME, "resnet12_last_with_mapping.pth")
+WORD_EMBED_PATH = "word_embeds/tieredImageNet_dim500.pickle"
+
+
 GLOVE = True
 
-DEVICE = 'cpu' #torch.device("cuda" if torch.cuda.is_available() else "cpu")
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 LR = 1.0
 WD = 5e-4
 EPOCHS = 1000
@@ -40,33 +38,61 @@ def save_model(ckpt, model, nickname, save_path):
     ckpt[nickname] = model.state_dict()
     torch.save(ckpt, save_path)
 
-def main():
-    base_labels = get_base_labels(BASE_LABELS)
-    label_embeds = get_embeds(WORD_EMBED_PATH, vocab=base_labels).float() #Tensor
+def _load_labels(file):
+    try:
+        with open(file, 'rb') as fo:
+            data = pickle.load(fo)
+        return data
+    except:
+        with open(file, 'rb') as f:
+            u = pickle._Unpickler(f)
+            u.encoding = 'latin1'
+            data = u.load()
+        return data
+
+def _get_labels(file, DATA_ROOT):
+    label_file = os.path.join(DATA_ROOT, file)
+    label_file_content = _load_labels(label_file)
+    labels = label_file_content['label_specific_str']
+    return labels
+
+def main(MODEL_HOME, MODEL_PATH, SAVE_PATH, DATA_ROOT):
+    labels1 = _get_labels('train_a_train_a_phase_train_labels.pkl', DATA_ROOT)
+    labels2 = _get_labels('train_b_labels.pkl', DATA_ROOT)
+    labels = labels1 + labels2
+
     ckpt, base_embeds = get_classifier_weights(MODEL_PATH, DEVICE) #Tensor
+    base_labels = labels #[name for name in ckpt['label2human'] if name != '']
+    print(base_labels)
+    label_embeds = get_embeds(WORD_EMBED_PATH, vocab=base_labels).float().to(DEVICE) #Tensor
     label_embed_size = 300 if GLOVE else 500
-    label_embeds = label_embeds[:, :label_embed_size]
-    model = LinearMap(label_embed_size,
-                      base_embeds.size(1)) # e.g. for glove 300x640
-    
+    label_embeds = label_embeds[:, :label_embed_size].to(DEVICE)
+    model = LinearMap(label_embed_size, base_embeds.size(1)).to(DEVICE) # e.g. for glove 300x640
+
     optimizer = torch.optim.SGD(model.parameters(),
                           lr=LR,
                           weight_decay=WD)
     criterion = nn.MSELoss()
-    
+
     for ep in range(EPOCHS):
-        
+
         output = model(label_embeds)
         loss = criterion(output, base_embeds)
-        
+
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-        
+
         if (ep+1) % 10 == 0:
             print(f"Epoch [{ep+1}/{EPOCHS}] Loss: {loss}")
-    
+
     save_model(ckpt, model, "mapping_linear_label2image", SAVE_PATH)
-        
+
 if __name__ == "__main__":
-    main()
+    # for i in range(3,11):
+    DATA_ROOT = "data/tieredImageNet/"
+    MODEL_HOME = f"/home/gridsan/eakyurek/gitother/rfs-incremental/dumped/backbones/tiered_backbone_feyza"
+    MODEL_PATH = os.path.join(MODEL_HOME, "resnet18_last.pth")
+    SAVE_PATH = os.path.join(MODEL_HOME, "resnet18_last_with_mapping.pth")
+#         BASE_LABELS = os.path.join(MODEL_HOME, "label2human.pickle")
+    main(MODEL_HOME, MODEL_PATH, SAVE_PATH, DATA_ROOT)
