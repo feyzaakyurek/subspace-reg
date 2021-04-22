@@ -124,7 +124,7 @@ def parse_option_eval():
         parser.add_argument('--stable_epochs', type=int, default=10,
                             help='How many stable epochs before stopping.')
         parser.add_argument('--convergence_epsilon', type=float, default=1e-4)
-        parser.add_argument('--temperature', type=float, default=5)
+        parser.add_argument('--temperature', type=float, default=1)
 
         if parser.parse_known_args()[0].label_pull is not None:
             parser.add_argument('--pulling', type=str, default="regularize",
@@ -139,7 +139,7 @@ def parse_option_eval():
                                                   "few_shot_language_pretrain_linear_tune",
                                                   "few-shot-incremental-language-pretrain-linear-tune",
                                                   "hierarchical-incremental-few-shot"]:
-        parser.add_argument('--novel_epochs', type=int, default=15, help='min number of epochs for novel support set.')
+        parser.add_argument('--min_novel_epochs', type=int, default=15, help='min number of epochs for novel support set.')
         parser.add_argument('--max_novel_epochs', type=int, default=1000, help='max number of epochs for novel support set.')
         parser.add_argument('--learning_rate', type=float, default=0.01, help='learning rate')
         parser.add_argument('--weight_decay', type=float, default=5e-4, help='weight decay')

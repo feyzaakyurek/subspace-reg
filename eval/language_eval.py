@@ -147,7 +147,7 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
         vocab_base, vocab_all, vocab_novel, orig2id = get_vocabs(base_val_loader, meta_valloader, query_ys)
         print("Vocab base: ", vocab_base)
         print("Vocab novel: ", vocab_novel)
-#         ipdb.set_trace()
+
         if idx == 0:
             orig_base_num = len(vocab_base)
         if idx > 0:
@@ -225,7 +225,6 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
                     rand_weights = rand_weights.float().to(device)
                     pullers = rand_weights @ base_weight
 
-
             
         # Push away from the closest base classifier weight.
         if opt.push_away is not None:
@@ -255,8 +254,12 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
         epoch = 1
         
         # Stable epochs
+        opt.stable = True if opt.target_train_loss == 0 else False
         stable_epochs = 0
-        while stable_epochs < opt.stable_epochs:
+        
+        stop_condition = True
+        while stop_condition:
+#         while stable_epochs < opt.stable_epochs:
         
 #         while (epoch < opt.max_novel_epochs) and (train_loss > opt.target_train_loss or epoch < opt.novel_epochs + 1):
 #         while train_loss > opt.target_train_loss or epoch < opt.novel_epochs + 1:
@@ -292,6 +295,11 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
 
             if opt.label_pull is not None and opt.pulling == "regularize":
                 
+                if opt.attraction_override == "distance2subspace":   
+                    pullers = lang_puller.get_projected_weight(opt.label_pull,
+                                                               base_weight,
+                                                               net.classifier.weight[len(vocab_base):,:])
+
                 reg = lang_puller.loss1(opt.label_pull, 
                                         pullers,
                                         net.classifier.weight[len(vocab_base):,:])
@@ -314,11 +322,14 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
             
 
             with torch.no_grad():
-                # Check if training converges
-                if abs(loss.item() - train_loss) < opt.convergence_epsilon:
-                    stable_epochs += 1
-                else:
-                    stable_epochs = 0
+                if opt.stable:
+                    # Check if training converges
+                    if abs(loss.item() - train_loss) < opt.convergence_epsilon:
+                        stable_epochs += 1
+                    else:
+                        stable_epochs = 0
+                    if stable_epochs == opt.stable_epochs: stop_condition = False
+                        
                 
                 acc1, acc5 = accuracy(output, support_ys_id, topk=(1,5))
                 train_acc, train_loss = acc1[0], loss.item()
@@ -329,6 +340,9 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
                           'Acc@1 {:10.3f}\t'
                           'Acc@5 {:10.3f}'.format(
                            epoch, loss.item(), acc1[0], acc5[0]))
+                    
+                if (epoch >= opt.max_novel_epochs) or (train_loss <= opt.target_train_loss and epoch >= opt.min_novel_epochs + 1):
+                    stop_condition = False
                 
 
 
@@ -557,7 +571,7 @@ def few_shot_language_incremental_test(net, ckpt, criterion, meta_valloader, bas
         train_loss = 15
         epoch = 1
 #         train_acc = 0
-        while train_loss > opt.target_train_loss or epoch < opt.novel_epochs + 1:
+        while train_loss > opt.target_train_loss or epoch < opt.min_novel_epochs + 1:
 #         while train_acc < opt.target_train_acc:
             freeze_backbone_weights(net, opt, epoch)
             net.train()
