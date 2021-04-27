@@ -12,14 +12,15 @@
 
 
 DUMPED_PATH="/home/gridsan/eakyurek/gitother/rfs-incremental/dumped"
-EXP_FOLDER=$DUMPED_PATH/"tiered/finetune_1shot_label_pull"
 DATA_PATH="/home/gridsan/eakyurek/gitother/rfs-incremental/data"
 BACKBONE_PATH="${DUMPED_PATH}/backbones/tiered_backbone_feyza/resnet18_last.pth"
+EXP_FOLDER=$DUMPED_PATH/"tiered/finetune_1shot_label_pull"
+
 mkdir -p $EXP_FOLDER
 
 cnt=0
-for LMBD in 0.2 0.3; do
-for TRLOSS in 1.0 1.2; do
+for LMBD in 0.3 0.4; do
+for TRLOSS in 0.7 0.8; do
 for PULL in 0.05 0.2 0.3; do
 for LR in 0.003 0.006; do
 (( cnt++ ))
@@ -39,6 +40,7 @@ if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then
                                --freeze_backbone_at 1 \
                                --label_pull $PULL \
                                --glove \
+                               --skip_val \
                                --num_workers 0 \
                                --pulling regularize \
                                --lmbd_reg_transform_w $LMBD \

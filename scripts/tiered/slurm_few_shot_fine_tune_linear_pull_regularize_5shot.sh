@@ -3,9 +3,9 @@
 #SBATCH --time=15-00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=5
+#SBATCH --cpus-per-task=10
 #SBATCH --gres=gpu:volta:1
-#SBATCH --array=1-24
+#SBATCH --array=1-1
 #SBATCH --output=dumped/%A_%a.out
 #SBATCH --error=dumped/%A_%a.err
 #SBATCH --job-name=tiered_pull5
@@ -16,12 +16,16 @@ EXP_FOLDER=$DUMPED_PATH/"tiered/finetune_5shot_linear_pull"
 DATA_PATH="/home/gridsan/eakyurek/gitother/rfs-incremental/data"
 BACKBONE_PATH="${DUMPED_PATH}/backbones/tiered_backbone_feyza/resnet18_last_with_mapping.pth"
 mkdir -p $EXP_FOLDER
-
+#lambda_0.2_trloss_1.0_pull_0.05_lr_0.001_2
 cnt=0
-for LMBD in 0.2 0.3; do
-for TRLOSS in 1.0 1.2; do
-for PULL in 0.05 0.2 0.3; do
-for LR in 0.002 0.001; do
+# for LMBD in 0.2 0.3; do
+# for TRLOSS in 1.0 1.2; do
+# for PULL in 0.05 0.2 0.3; do
+# for LR in 0.002 0.001; do
+for LMBD in 0.2; do
+for TRLOSS in 1.0; do
+for PULL in 0.05; do
+for LR in 0.001; do
 (( cnt++ ))
 if [[ $cnt -eq $SLURM_ARRAY_TASK_ID  ]]; then
     EXP_NAME=lambda_${LMBD}_trloss_${TRLOSS}_pull_${PULL}_lr_${LR}_${SLURM_ARRAY_TASK_ID}
@@ -42,6 +46,7 @@ if [[ $cnt -eq $SLURM_ARRAY_TASK_ID  ]]; then
                                --num_workers 0 \
                                --pulling regularize \
                                --lmbd_reg_transform_w $LMBD \
+			       --skip_val \
                                --attraction_override "mapping_linear_label2image" \
                                --target_train_loss $TRLOSS > $LOG_STDOUT 2> $LOG_STDERR
 fi

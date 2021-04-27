@@ -1,26 +1,27 @@
 #!/bin/bash
 #SBATCH --constraint=xeon-g6
-#SBATCH --time=15-00:00
+#SBATCH --time=18-00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=4
+#SBATCH --cpus-per-task=5
 #SBATCH --gres=gpu:volta:1
-#SBATCH --array=1-3
+#SBATCH --array=1-2
 #SBATCH --output=dumped/%A_%a.out
 #SBATCH --error=dumped/%A_%a.err
-#SBATCH --job-name=tiered_5ftmore
+#SBATCH --job-name=tiered_5ft
 
 
-DUMPED_PATH="/raid/lingo/akyurek/git/rfs-incremental/dumped"
+DUMPED_PATH="/home/gridsan/eakyurek/gitother/rfs-incremental/dumped"
+DATA_PATH="/home/gridsan/eakyurek/gitother/rfs-incremental/data"
+BACKBONE_PATH="${DUMPED_PATH}/backbones/tiered_backbone_feyza/resnet18_last.pth"
 EXP_FOLDER=$DUMPED_PATH/"tiered/finetune_5shot"
-DATA_PATH="/raid/lingo/akyurek/git/rfs-incremental/data"
-BACKBONE_PATH="${DUMPED_PATH}/backbones/tieredImageNet/linear/bias_false/resnet18_last.pth"
+
 mkdir -p $EXP_FOLDER
 
 cnt=0
-for TRLOSS in 0.4; do
-for LMBD in 0.3 0.5 1.0; do
-for LR in 0.001; do
+for LMBD in 0.2; do
+for TRLOSS in 0.6 0.8; do
+for LR in 0.002; do
 (( cnt++ ))
 if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then
     EXP_NAME=trloss_${TRLOSS}_lmbd_${LMBD}_lr_${LR}_${SLURM_ARRAY_TASK_ID}
@@ -29,10 +30,12 @@ if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then
     python eval_incremental.py --model_path $BACKBONE_PATH \
                                --data_root $DATA_PATH \
                                --n_shots 5 \
+                               --num_workers 0 \
                                --dataset tieredImageNet \
                                --eval_mode few-shot-incremental-fine-tune \
                                --classifier linear \
-                               --novel_epochs 10 \
+                               --min_novel_epochs 10 \
+                               --model resnet18 \
                                --lmbd_reg_transform_w $LMBD \
                                --learning_rate $LR \
                                --freeze_backbone_at 1 \
