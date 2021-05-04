@@ -110,9 +110,12 @@ def parse_option_eval():
                             help='Instead of label pullers attract to elsewhere.')
         parser.add_argument('--pull_path_override', type=str, default=None,
                             help='Load embeds here.')
-
         parser.add_argument('--novel_initializer', type=str, default=None,
                             help='novel weight initialization rule if not random.')
+        parser.add_argument('--stable_epochs', type=int, default=10,
+                            help='How many stable epochs before stopping.')
+        parser.add_argument('--convergence_epsilon', type=float, default=1e-4)
+        parser.add_argument('--temperature', type=float, default=3)
 
         if parser.parse_known_args()[0].label_pull is not None:
             parser.add_argument('--pulling', type=str, default="regularize",

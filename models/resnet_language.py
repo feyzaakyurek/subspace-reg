@@ -46,8 +46,10 @@ class LinearMap(nn.Module):
 class LangPuller(nn.Module):
     def __init__(self,opt, vocab_base, vocab_novel):
         super(LangPuller, self).__init__()
-
         self.mapping_model = None
+        self.temp = opt.temperature
+        
+        
         if opt.pull_path_override is None:
             dim = opt.word_embed_size # TODO
 
@@ -107,8 +109,7 @@ class LangPuller(nn.Module):
             scores = self.novel_embeds @ torch.transpose(self.base_embeds, 0, 1)
             if mask:
                 scores.fill_diagonal_(-9999)
-            scores = self.softmax(scores)
-
+            scores = self.softmax(scores / self.temp)
             if return_scores:
                 return scores
             return scores @ base_weight # 5 x 640 for fine-tuning.
