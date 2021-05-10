@@ -74,4 +74,4 @@ def get_embeds(embed_pth, vocab, dim=500, cdim=640):
                 embeds[i] = mean_embed
         embeds[i] /= len(words)
 
-    return torch.stack([torch.from_numpy(e) for e in embeds], 0)
+    return torch.stack([torch.tensor(e) for e in embeds], 0)

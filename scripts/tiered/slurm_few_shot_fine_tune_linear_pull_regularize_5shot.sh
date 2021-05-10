@@ -3,28 +3,33 @@
 #SBATCH --time=15-00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=5
+#SBATCH --cpus-per-task=10
 #SBATCH --gres=gpu:volta:1
-#SBATCH --array=1-24
+#SBATCH --array=1-8
 #SBATCH --output=dumped/%A_%a.out
 #SBATCH --error=dumped/%A_%a.err
 #SBATCH --job-name=tiered_pull5
 
 
 DUMPED_PATH="/home/gridsan/eakyurek/gitother/rfs-incremental/dumped/"
-EXP_FOLDER=$DUMPED_PATH/"tiered/finetune_5shot_linear_pull"
+EXP_FOLDER=$DUMPED_PATH/"tiered/finetune_5shot_linear_pull_converge"
 DATA_PATH="/home/gridsan/eakyurek/gitother/rfs-incremental/data"
 BACKBONE_PATH="${DUMPED_PATH}/backbones/tiered_backbone_feyza/resnet18_last_with_mapping.pth"
 mkdir -p $EXP_FOLDER
-
+#lambda_0.2_trloss_1.0_pull_0.05_lr_0.001_2
 cnt=0
-for LMBD in 0.2 0.3; do
-for TRLOSS in 1.0 1.2; do
-for PULL in 0.05 0.2 0.3; do
-for LR in 0.002 0.001; do
+# for LMBD in 0.2 0.3; do
+# for TRLOSS in 1.0 1.2; do
+# for PULL in 0.05 0.2 0.3; do
+# for LR in 0.002 0.001; do
+for LMBD in 0.2; do
+for TRLOSS in 0.0; do
+for PULL in 0.03; do
+for LR in 0.002; do
+for TEMP in 1.0 1.5 2.0 3.0; do
 (( cnt++ ))
 if [[ $cnt -eq $SLURM_ARRAY_TASK_ID  ]]; then
-    EXP_NAME=lambda_${LMBD}_trloss_${TRLOSS}_pull_${PULL}_lr_${LR}_${SLURM_ARRAY_TASK_ID}
+    EXP_NAME=lambda_${LMBD}_trloss_${TRLOSS}_pull_${PULL}_lr_${LR}_temp_${TEMP}_${SLURM_ARRAY_TASK_ID}
     LOG_STDOUT="${EXP_FOLDER}/${EXP_NAME}.out"
     LOG_STDERR="${EXP_FOLDER}/${EXP_NAME}.err"
     python eval_incremental.py --model_path $BACKBONE_PATH \
@@ -42,9 +47,12 @@ if [[ $cnt -eq $SLURM_ARRAY_TASK_ID  ]]; then
                                --num_workers 0 \
                                --pulling regularize \
                                --lmbd_reg_transform_w $LMBD \
+			                         --skip_val \
+                               --temperature ${TEMP} \
                                --attraction_override "mapping_linear_label2image" \
                                --target_train_loss $TRLOSS > $LOG_STDOUT 2> $LOG_STDERR
 fi
+done
 done
 done
 done

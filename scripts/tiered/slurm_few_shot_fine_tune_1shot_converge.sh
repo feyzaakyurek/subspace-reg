@@ -14,14 +14,14 @@
 DUMPED_PATH="/home/gridsan/eakyurek/gitother/rfs-incremental/dumped"
 DATA_PATH="/home/gridsan/eakyurek/gitother/rfs-incremental/data"
 BACKBONE_PATH="${DUMPED_PATH}/backbones/tiered_backbone_feyza/resnet18_last.pth"
-EXP_FOLDER=$DUMPED_PATH/"tiered/finetune_1shot"
+EXP_FOLDER=$DUMPED_PATH/"tiered/finetune_1shot_converge_delta"
 
 mkdir -p $EXP_FOLDER
 
 cnt=0
-for LMBD in 0.4 0.3; do
-for TRLOSS in 0.1 0.2; do
-for LR in 0.002 0.003 0.006; do
+for LMBD in 0.2 0.3; do
+for TRLOSS in 0.0; do
+for LR in 0.002 0.003; do
 (( cnt++ ))
 if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then
     EXP_NAME=lmbd_${LMBD}_trloss_${TRLOSS}_lr_${LR}_${SLURM_ARRAY_TASK_ID}
@@ -40,7 +40,7 @@ if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then
                                --lmbd_reg_transform_w $LMBD \
                                --freeze_backbone_at 1 \
                                --weight_decay 5e-3 \
-			       --skip_val \
+			                         --skip_val \
                                --target_train_loss $TRLOSS > $LOG_STDOUT 2> $LOG_STDERR
 fi
 done

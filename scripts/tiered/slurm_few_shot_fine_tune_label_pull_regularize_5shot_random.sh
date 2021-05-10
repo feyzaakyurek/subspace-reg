@@ -3,49 +3,53 @@
 #SBATCH --time=15-00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=4
+#SBATCH --cpus-per-task=5
 #SBATCH --gres=gpu:volta:1
-#SBATCH --array=1-8
+#SBATCH --array=1-4
 #SBATCH --output=dumped/%A_%a.out
 #SBATCH --error=dumped/%A_%a.err
 #SBATCH --job-name=tiered_random5
 
 
-DUMPED_PATH="/raid/lingo/akyurek/git/rfs-incremental/dumped"
-EXP_FOLDER=$DUMPED_PATH/"tiered/finetune_5shot_label_pull"
-DATA_PATH="/raid/lingo/akyurek/git/rfs-incremental/data"
-BACKBONE_PATH="${DUMPED_PATH}/backbones/tieredImageNet/linear/resnet18/bias_false/resnet18_last.pth"
+DUMPED_PATH="/home/gridsan/eakyurek/gitother/rfs-incremental/dumped"
+EXP_FOLDER=$DUMPED_PATH/"tiered/finetune_5shot_random_pull"
+DATA_PATH="/home/gridsan/eakyurek/gitother/rfs-incremental/data"
+BACKBONE_PATH="${DUMPED_PATH}/backbones/tiered_backbone_feyza/resnet18_last.pth"
 mkdir -p $EXP_FOLDER
 
 cnt=0
-for LMBD in 0.2 0.3; do
-for TRLOSS in 1.0 1.2; do
+for LMBD in 0.2; do
+for TRLOSS in 1.2; do
 for PULL in 0.2 0.3; do
+for LR in 0.002 0.003; do
 (( cnt++ ))
 if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then
-    EXP_NAME=random_lambda_${LMBD}_trloss_${TRLOSS}_pull_${PULL}_${SLURM_ARRAY_TASK_ID}
+    EXP_NAME=lambda_${LMBD}_trloss_${TRLOSS}_pull_${PULL}_lr_${LR}_${SLURM_ARRAY_TASK_ID}
     LOG_STDOUT="${EXP_FOLDER}/${EXP_NAME}.out"
     LOG_STDERR="${EXP_FOLDER}/${EXP_NAME}.err"
-    python eval_incremental.py --model_path $BACKBONE_PATH \
+    python -u eval_incremental.py --model_path $BACKBONE_PATH \
                                --data_root $DATA_PATH \
                                --n_shots 5 \
                                --dataset tieredImageNet \
                                --eval_mode few-shot-incremental-fine-tune \
                                --classifier linear \
-                               --novel_epochs 10 \
-                               --learning_rate 0.001 \
-                               --word_embed_path "random_embeds" \
+                               --min_novel_epochs 10 \
+                               --model resnet18 \
+                               --learning_rate $LR \
                                --freeze_backbone_at 1 \
                                --label_pull $PULL \
                                --glove \
+                               --num_workers 0 \
+                               --skip_val \
                                --pulling regularize \
+                               --attraction_override random_uniform \
                                --lmbd_reg_transform_w $LMBD \
                                --target_train_loss $TRLOSS > $LOG_STDOUT 2> $LOG_STDERR
 fi
 done
 done
 done
-
+done
 # For debugging.
 
 # No language fine tuning few-shot with label pull
@@ -62,7 +66,7 @@ done
 #                                --pulling regularize \
 #                                --lmbd_reg_transform_w 2.0 \
 #                                --target_train_loss 2.0
-
+# --use_episodes \
 
 # # No language fine tuning few-shot
 # export DUMPED_PATH="dumped"

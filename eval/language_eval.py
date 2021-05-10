@@ -36,6 +36,7 @@ def validate_fine_tune(query_xs, query_ys_id, net, criterion, opt, epoch):
     net.eval()
     with torch.no_grad():
         if torch.cuda.is_available():
+            K = len(torch.unique(query_ys_id))
             query_xs = query_xs.cuda()
             query_ys_id = query_ys_id.cuda()
 
@@ -46,6 +47,8 @@ def validate_fine_tune(query_xs, query_ys_id, net, criterion, opt, epoch):
             # measure accuracy and record loss
             acc1, acc5 = accuracy(output, query_ys_id, topk=(1, 5))
             query_ys_pred = torch.argmax(output, dim=1).detach().cpu().numpy()
+            output[:,torch.arange(output.shape[1]) < output.shape[1] - K] = -float('inf')
+            acc1_novel_only, acc5_novel_only = accuracy(output, query_ys_id, topk=(1, 5))
             if epoch % 10 == 0:
                 print('Test \t'
                       'Loss {:10.4f}\t'
@@ -53,19 +56,24 @@ def validate_fine_tune(query_xs, query_ys_id, net, criterion, opt, epoch):
                       'Acc@5 {:10.3f}'.format(
                        loss.item(), acc1[0], acc5[0]))
 
-    return acc1[0], acc5[0], loss.item(), query_ys_pred
+    return acc1[0], acc5[0], loss.item(), query_ys_pred, acc1_novel_only
 
 def eval_base(net, base_batch, criterion, vocab_all=None, df=None, return_preds=False):
     acc_base_ = []
+    acc_base_only_ = []
     net.eval()
+
     with torch.no_grad():
         *_, input, target = base_batch
         input = input.squeeze(0).cuda()
         target = target.squeeze(0).cuda().long()
         output = net(input)
         loss = criterion(output, target)
-
         acc1, acc5 = accuracy(output, target, topk=(1, 5))
+        if vocab_all:
+            base = output[:,:len(vocab_all)]
+            bacc1,bacc5 = accuracy(base, target, topk=(1, 5))
+            acc_base_only_.append(bacc1.item())
         acc_base_.append(acc1[0].item())
         ys_pred = torch.argmax(output, dim=1).detach().cpu().numpy()
         if df is not None:
@@ -77,7 +85,7 @@ def eval_base(net, base_batch, criterion, vocab_all=None, df=None, return_preds=
         if return_preds:
             return np.mean(acc_base_), ys_pred
 
-    return np.mean(acc_base_)
+    return np.mean(acc_base_), np.mean(acc_base_only_)
 
 def get_mean_per_class(support_xs, support_ys_id):
     support_ys_id_ = support_ys_id - support_ys_id.min()
@@ -97,7 +105,7 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
         ckpt = torch.load(opt.model_path)
 
     # Create meters.
-    acc_novel, acc_base = [[] for _ in range(2)]
+    acc_novel, acc_base, acc_base_only, acc_novel_only = [[] for _ in range(4)]
 #     acc_novel, acc_base = [AverageMeter() for _ in range(2)]
 
     # Used for creation of confusion matrices.
@@ -192,7 +200,8 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
 
 
         # Validate before training. TODO
-        test_acc, *_ = validate_fine_tune(query_xs, query_ys_id, net, criterion, opt, 0)
+        test_acc, *extras = validate_fine_tune(query_xs, query_ys_id, net, criterion, opt, 0)
+        acc_novel_only_ = extras[-1].item()
         print('{:25} {:.4f}\n'.format("Novel incremental acc before fine-tune:",
                                       test_acc.item()))
 
@@ -206,7 +215,7 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
         # Stable epochs
         opt.stable = True if opt.target_train_loss == 0 else False
         stable_epochs = 0
-        
+
         stop_condition = True
         while stop_condition:
 #         while stable_epochs < opt.stable_epochs:
@@ -276,7 +285,7 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
                     else:
                         stable_epochs = 0
                     if stable_epochs == opt.stable_epochs: stop_condition = False
-                     
+
                 acc1, acc5 = accuracy(output, support_ys_id, topk=(1,5))
                 train_acc, train_loss = acc1[0], loss.item()
                 if epoch % 10 == 0:
@@ -286,13 +295,13 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
                           'Acc@1 {:10.3f}\t'
                           'Acc@5 {:10.3f}'.format(
                            epoch, loss.item(), acc1[0], acc5[0]))
-                    
+
                 if (epoch >= opt.max_novel_epochs) or (train_loss <= opt.target_train_loss and epoch >= opt.min_novel_epochs + 1):
                     stop_condition = False
 
 
 
-            test_acc, test_acc_top5, test_loss, query_ys_pred = validate_fine_tune(query_xs,
+            test_acc, test_acc_top5, test_loss, query_ys_pred, test_acc_novel_only = validate_fine_tune(query_xs,
                                                                                    query_ys_id,
                                                                                    net,
                                                                                    criterion,
@@ -327,15 +336,17 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
         # Evaluate base samples with the updated network
         base_batch = next(base_valloader_it)
         vis_condition = (vis and idx == 0)
-        acc_base_ = eval_base(net,
+        acc_base_, acc_base_only_ = eval_base(net,
                               base_batch,
                               criterion,
-                              vocab_all = vocab_all if vis_condition else None,
+                              vocab_all = vocab_base,
                               df= df if vis_condition else None)
 
         # Update meters.
         acc_base.append(acc_base_)
         acc_novel.append(test_acc.item())
+        acc_base_only.append(acc_base_only_)
+        acc_novel_only.append(test_acc_novel_only.item())
 #         acc_base.update(acc_base_)
 #         acc_novel.update(test_acc.item())
 
@@ -352,12 +363,13 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
                                                             novel_weights_pulled], 0))
 
 
-            pull_acc_base_ = eval_base(net, base_batch, criterion)
-            pull_test_acc, *_ = validate_fine_tune(query_xs,
+            pull_acc_base_, pull_acc_base_only_  = eval_base(net, base_batch, criterion, vocab_all = vocab_base, )
+            pull_test_acc, *extras = validate_fine_tune(query_xs,
                                                    query_ys_id,
                                                    net,
                                                    criterion,
                                                    opt, epoch)
+            pull_test_acc_novel_only = extras
             pull_avg_score = (pull_acc_base_ + pull_test_acc.item())/2
             pull_running_avg.append(pull_avg_score)
 
@@ -380,8 +392,13 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
                     epoch,
                     test_acc.item(),
                     acc_base_,
+                    test_acc_novel_only.item(),
+                    acc_base_only_,
                     np.mean(acc_base),
-                    np.mean(acc_novel))
+                    np.mean(acc_novel),
+                    np.mean(acc_base_only),
+                    np.mean(acc_novel_only),
+                    )
 #                     acc_base.avg,
 #                     acc_novel.avg)
 
@@ -421,6 +438,12 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
     else:
 #         return acc_novel.avg, acc_base.avg
         acc_all = [sum(x)/2 for x in zip(acc_base, acc_novel)]
+        delta_base = [a2-a1 for a1,a2 in zip(acc_base, acc_base_only)]
+        delta_novel = [a2-a1 for a1,a2 in zip(acc_novel, acc_novel_only)]
+        delta_all =  [(a1+a2)/2 for a1,a2 in zip(delta_novel, delta_base)]
+        print("final acc_base_only: " + str(mean_confidence_interval(acc_base_only)) + " acc_novel_only: " + str(mean_confidence_interval(acc_novel_only)))
+        print("final delta_base: " + str(mean_confidence_interval(delta_base)) + " delta_novel: " + str(mean_confidence_interval(delta_novel)))
+        print("final delta_all: " + str(mean_confidence_interval(delta_all)))
         return mean_confidence_interval(acc_novel), mean_confidence_interval(acc_base), mean_confidence_interval(acc_all)
 
 def few_shot_language_incremental_test(net, ckpt, criterion, meta_valloader, base_val_loader, opt, vis=False):
@@ -432,7 +455,7 @@ def few_shot_language_incremental_test(net, ckpt, criterion, meta_valloader, bas
     assert net.classifier.attention == attention
 
     # Create meters.
-    acc_novel, acc_base = [AverageMeter() for _ in range(2)]
+    acc_novel, acc_base, acc_novel_only, acc_base_only = [AverageMeter() for _ in range(4)]
 
     # Save initial backbone.
     basenet = copy.deepcopy(net).cuda()
@@ -496,7 +519,8 @@ def few_shot_language_incremental_test(net, ckpt, criterion, meta_valloader, bas
         net.classifier.augment_classifier_(vocab_novel, embed_pth)
 
         # Validate before training.
-        test_acc, *_ = validate_fine_tune(query_xs, query_ys_id, net, criterion, opt, 0)
+        test_acc, *extras = validate_fine_tune(query_xs, query_ys_id, net, criterion, opt, 0)
+        test_acc_novel_only = extras[-1].item()
         print('{:25} {:.4f}\n'.format("Novel incremental acc before fine-tune:",test_acc.item()))
 
 
@@ -544,7 +568,7 @@ def few_shot_language_incremental_test(net, ckpt, criterion, meta_valloader, bas
                       'Acc@5 {:10.3f}'.format(
                        epoch, loss.item(), acc1[0], acc5[0]))
 
-            test_acc, test_acc_top5, test_loss, query_ys_pred = validate_fine_tune(query_xs,
+            test_acc, test_acc_top5, test_loss, query_ys_pred, test_acc_novel_only = validate_fine_tune(query_xs,
                                                                                    query_ys_id,
                                                                                    net,
                                                                                    criterion,
@@ -561,15 +585,17 @@ def few_shot_language_incremental_test(net, ckpt, criterion, meta_valloader, bas
         # Evaluate base samples with the updated network
         base_batch = next(base_valloader_it)
         vis_condition = (vis and idx == 0)
-        acc_base_ = eval_base(net,
+        acc_base_, acc_base_only_ = eval_base(net,
                               base_batch,
                               criterion,
-                              vocab_all = vocab_all if vis_condition else None,
+                              vocab_all = vocab_base,
                               df= df if vis_condition else None)
 
         # Update meters.
         acc_base.update(acc_base_)
         acc_novel.update(test_acc.item())
+        acc_base_only.update(acc_base_only_)
+        acc_novel_only.update(test_acc_novel_only.item())
 
         # Log episode results.
         log_episode(novel_labels,
@@ -577,12 +603,18 @@ def few_shot_language_incremental_test(net, ckpt, criterion, meta_valloader, bas
                     epoch,
                     test_acc.item(),
                     acc_base_,
+                    test_acc_novel_only.item(),
+                    acc_base_only_,
                     acc_base.avg,
-                    acc_novel.avg)
-
-
+                    acc_novel.avg,
+                    acc_base_only.avg,
+                    acc_novel_only.avg,
+                    )
 
     if vis:
         return df
     else:
+        delta_base  = mean_confidence_interval(acc_base_only)
+        delta_novel = mean_confidence_interval(acc_novel_only)
+        print("final delta_base: " + delta_base + " delta_novel: " + delta_novel)
         return mean_confidence_interval(acc_novel), mean_confidence_interval(acc_base)

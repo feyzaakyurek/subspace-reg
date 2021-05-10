@@ -8,20 +8,21 @@
 #SBATCH --array=1-4
 #SBATCH --output=dumped/%A_%a.out
 #SBATCH --error=dumped/%A_%a.err
-#SBATCH --job-name=tiered_pull5
+#SBATCH --job-name=tiered_pull1
 
 
 DUMPED_PATH="/home/gridsan/eakyurek/gitother/rfs-incremental/dumped"
-EXP_FOLDER=$DUMPED_PATH/"tiered/finetune_5shot_label_pull"
 DATA_PATH="/home/gridsan/eakyurek/gitother/rfs-incremental/data"
 BACKBONE_PATH="${DUMPED_PATH}/backbones/tiered_backbone_feyza/resnet18_last.pth"
+EXP_FOLDER=$DUMPED_PATH/"tiered/finetune_1shot_label_pull_desc_converge"
+
 mkdir -p $EXP_FOLDER
 
 cnt=0
 for LMBD in 0.2; do
-for TRLOSS in 1.1 1.2; do
-for PULL in 0.2; do
-for LR in 0.002 0.003; do
+for TRLOSS in 0.0; do
+for PULL in 0.01 0.03; do
+for LR in 0.003 0.006; do
 (( cnt++ ))
 if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then
     EXP_NAME=lambda_${LMBD}_trloss_${TRLOSS}_pull_${PULL}_lr_${LR}_${SLURM_ARRAY_TASK_ID}
@@ -29,7 +30,7 @@ if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then
     LOG_STDERR="${EXP_FOLDER}/${EXP_NAME}.err"
     python -u eval_incremental.py --model_path $BACKBONE_PATH \
                                --data_root $DATA_PATH \
-                               --n_shots 5 \
+                               --n_shots 1 \
                                --dataset tieredImageNet \
                                --eval_mode few-shot-incremental-fine-tune \
                                --classifier linear \
@@ -39,16 +40,18 @@ if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then
                                --freeze_backbone_at 1 \
                                --label_pull $PULL \
                                --glove \
-                               --num_workers 0 \
                                --skip_val \
+                               --num_workers 0 \
                                --pulling regularize \
                                --lmbd_reg_transform_w $LMBD \
+                               --word_embed_path description_embeds \
                                --target_train_loss $TRLOSS > $LOG_STDOUT 2> $LOG_STDERR
 fi
 done
 done
 done
 done
+
 # For debugging.
 
 # No language fine tuning few-shot with label pull
