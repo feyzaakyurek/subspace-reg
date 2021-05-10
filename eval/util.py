@@ -151,13 +151,24 @@ def log_episode(novel_labels,
                 epoch,
                 novel_acc,
                 base_acc,
+                novel_acc_only,
+                base_acc_only,
                 running_base,
-                running_novel):
+                running_novel,
+                running_delta_base,
+                running_delta_novel,
+                ):
     avg_score = (novel_acc + base_acc) / 2
     running_avg = (running_base + running_novel) / 2
+    running_delta = (running_delta_novel + running_delta_base) / 2
     print('\n{:25} {:}\n'
           '{:25} {:}\n'
           '{:25} {:}\n'
+          '{:25} {:.4f}\n'
+          '{:25} {:.4f}\n'
+          '{:25} {:.4f}\n'
+          '{:25} {:.4f}\n'
+          '{:25} {:.4f}\n'
           '{:25} {:.4f}\n'
           '{:25} {:.4f}\n'
           '{:25} {:.4f}\n'
@@ -173,6 +184,10 @@ def log_episode(novel_labels,
                                   novel_acc,
                                   "Base acc:",
                                   base_acc,
+                                  "Novel acc (alone):",
+                                  novel_acc_only,
+                                 "Base acc (alone):",
+                                  base_acc_only,
                                   "Average:",
                                   avg_score,
                                   "Runnning Base Avg:",
@@ -181,6 +196,12 @@ def log_episode(novel_labels,
                                   running_novel,
                                   "Running Average:",
                                   running_avg,
+                                  "Running Delta Base",
+                                  running_delta_base,
+                                  "Running Delta Novel",
+                                  running_delta_novel,
+                                  "Running Delta Average",
+                                  running_delta,
                                   ), flush=True)
 
 def validate(val_loader, model, criterion, opt):

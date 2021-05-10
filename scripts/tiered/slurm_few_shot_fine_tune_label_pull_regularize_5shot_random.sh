@@ -5,10 +5,10 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=5
 #SBATCH --gres=gpu:volta:1
-#SBATCH --array=1-54
+#SBATCH --array=1-4
 #SBATCH --output=dumped/%A_%a.out
 #SBATCH --error=dumped/%A_%a.err
-#SBATCH --job-name=tiered_pull5
+#SBATCH --job-name=tiered_random5
 
 
 DUMPED_PATH="/home/gridsan/eakyurek/gitother/rfs-incremental/dumped"
@@ -18,10 +18,10 @@ BACKBONE_PATH="${DUMPED_PATH}/backbones/tiered_backbone_feyza/resnet18_last.pth"
 mkdir -p $EXP_FOLDER
 
 cnt=0
-for LMBD in 0.2 0.3; do
-for TRLOSS in 8.0 1.0 1.2; do
-for PULL in 0.05 0.2 0.3; do
-for LR in 0.002 0.001; do
+for LMBD in 0.2; do
+for TRLOSS in 1.2; do
+for PULL in 0.2 0.3; do
+for LR in 0.002 0.003; do
 (( cnt++ ))
 if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then
     EXP_NAME=lambda_${LMBD}_trloss_${TRLOSS}_pull_${PULL}_lr_${LR}_${SLURM_ARRAY_TASK_ID}
