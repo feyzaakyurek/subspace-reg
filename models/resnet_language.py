@@ -129,6 +129,13 @@ class LangPuller(nn.Module):
         w = weights.unsqueeze(1)
         sum_novel = torch.sum(scores * torch.sum((bs - w)**2, -1))
         return pull * sum_novel
+    
+    def get_projected_weight(self, pull, base_weight, weights):
+        tr = torch.transpose(base_weight, 0, 1)
+        Q, R = torch.qr(tr, some=True) # Q is 640x60
+        mut = weights @ Q # mut is 5 x 60
+        mutnorm = mut / torch.norm(base_weight, dim=1).unsqueeze(0)
+        return mutnorm @ base_weight
 
 class LangLinearClassifier(nn.Module):
     def __init__(self, vocab,  load_embeds, dim, description=False,

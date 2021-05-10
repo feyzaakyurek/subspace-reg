@@ -67,9 +67,8 @@ def eval_base(net, base_batch, criterion, vocab_all=None, df=None, return_preds=
 
         acc1, acc5 = accuracy(output, target, topk=(1, 5))
         acc_base_.append(acc1[0].item())
-
+        ys_pred = torch.argmax(output, dim=1).detach().cpu().numpy()
         if df is not None:
-            ys_pred = torch.argmax(output, dim=1).detach().cpu().numpy()
             imgdata = input.detach().numpy()
             base_info = [(0, vocab_all[target[i]], True, vocab_all[ys_pred[i]],
                           image_formatter(imgdata[i,:,:,:]))  for i in range(len(target))]
@@ -102,7 +101,12 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
 #     acc_novel, acc_base = [AverageMeter() for _ in range(2)]
 
     # Used for creation of confusion matrices.
-    # preds_df = pd.DataFrame(columns = ["Episode", "Gold", "Prediction"])
+    if opt.save_preds_0:
+        preds_df = pd.DataFrame(columns = ["Episode", "Gold", "Prediction"])
+    
+    # Reset seeds.
+    torch.manual_seed(opt.set_seed)
+    np.random.seed(opt.set_seed)
 
     # Pretrained backbone, net will be reset before every episode.
     basenet = copy.deepcopy(net).cuda()
@@ -238,6 +242,11 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
                                             net.classifier.weight[len(vocab_base):,:],
                                             base_weight)
                 else:
+                    if opt.attraction_override == "distance2subspace":   
+                        pullers = lang_puller.get_projected_weight(opt.label_pull,
+                                                                   base_weight,
+                                                                   net.classifier.weight[len(vocab_base):,:])
+                    
                     reg = lang_puller.loss1(opt.label_pull,
                                             pullers,
                                             net.classifier.weight[len(vocab_base):,:])
@@ -377,27 +386,28 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
 #                     acc_novel.avg)
 
 
-#         ######## To save preds (temporary, comment out below later) ########
-#         _, base_query_ys, *_ = base_batch
-#         base_query_ys = base_query_ys.squeeze(0)
-#         acc_base_, base_preds  = eval_base(net, base_batch, criterion, vocab_all, return_preds=True)
-#         id2orig = {}
+        ######## To save preds (temporary, comment out below later) ########
+        if opt.save_preds_0:
+            _, base_query_ys, *_ = base_batch
+            base_query_ys = base_query_ys.squeeze(0)
+            acc_base_, base_preds  = eval_base(net, base_batch, criterion, vocab_all, return_preds=True)
+            id2orig = {}
 
-#         for k,v in orig2id.items():
-#             id2orig[v] = k
-#         print("!!! Mini imagenet hard coded 64. !!")
-#         query_ys_pred = [id2orig[k.item()] if k>=64 else k.item() for k in query_ys_pred]
-#         base_preds = [id2orig[k.item()] if k>=64 else k.item() for k in base_preds]
+            for k,v in orig2id.items():
+                id2orig[v] = k
+            print("!!! Mini imagenet hard coded 64. !!")
+            query_ys_pred = [id2orig[k.item()] if k>=64 else k.item() for k in query_ys_pred]
+            base_preds = [id2orig[k.item()] if k>=64 else k.item() for k in base_preds]
 
-#         temp_df = pd.DataFrame({"Episode": np.repeat(idx, len(query_ys)+len(base_query_ys)),
-#                                 "Gold": np.concatenate((query_ys, base_query_ys),0),
-#                                 "Prediction": np.concatenate((query_ys_pred, base_preds),0).astype(int)})
-#         preds_df = pd.concat([preds_df, temp_df], 0)
+            temp_df = pd.DataFrame({"Episode": np.repeat(idx, len(query_ys)+len(base_query_ys)),
+                                    "Gold": np.concatenate((query_ys, base_query_ys),0),
+                                    "Prediction": np.concatenate((query_ys_pred, base_preds),0).astype(int)})
+            preds_df = pd.concat([preds_df, temp_df], 0)
 
-#         if idx == 5:
-#             preds_df.to_csv("csv_files/finetuning_preds.csv", index=False)
-#             exit(0)
-#         ######## To save preds (temporary, comment out above later) ########
+            if idx == 5:
+                preds_df.to_csv(f"csv_files/{opt.eval_mode}_predictions.csv", index=False)
+                exit(0)
+        ######## To save preds (temporary, comment out above later) ########
 
 
     if opt.track_label_inspired_weights:

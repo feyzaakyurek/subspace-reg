@@ -14,9 +14,10 @@
 
 # Create the combinations of params for each array task,
 # and save them to a temp params file.
-DUMPED_PATH="/home/gridsan/akyurek/git/rfs-incremental/dumped"
+MY_DUMPED="/home/gridsan/akyurek/git/rfs-incremental/dumped"
+SHARED_DUMPED="/home/gridsan/akyurek/akyureklab_shared/rfs-incremental/dumped"
 DATA_PATH="/home/gridsan/groups/akyureklab/rfs-incremental/data"
-BACKBONES_FOLDER=${DUMPED_PATH}/backbones/label/concat
+BACKBONES_FOLDER=${SHARED_DUMPED}/backbones/c-x-concat
 mkdir -p $BACKBONES_FOLDER
 # DUMPED_PATH="/home/gridsan/eakyurek/gitother/rfs-incremental/dumped/backbones/c-x-concat/size_experiments"
 # DATA_PATH="/home/gridsan/eakyurek/akyureklab_shared/rfs-incremental/data"

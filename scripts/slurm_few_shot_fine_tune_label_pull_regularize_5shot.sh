@@ -14,61 +14,62 @@
 DUMPED_PATH="/home/gridsan/akyurek/git/rfs-incremental/dumped"
 EXP_FOLDER=$DUMPED_PATH/"converge/finetune_label_pull_glove_new_episodes"
 DATA_PATH="/home/gridsan/groups/akyureklab/rfs-incremental/data"
-# # BACKBONE_PATH="${DUMPED_PATH}/backbones/linear/resnet12_miniImageNet_linear_classifier_wbias/resnet12_last.pth"
 BACKBONE_PATH="${DUMPED_PATH}/backbones/linear/resnet12_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain_classifier_linear_8075566/resnet12_last.pth"
 
 mkdir -p $EXP_FOLDER
 
-cnt=0
-for LMBD in 0.03; do
-for TRLOSS in 0.0; do
-for TEMP in 1.5; do
-for PULL in 0.01 0.03; do
-(( cnt++ ))
-if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then
-    EXP_NAME=glove_lambda_${LMBD}_trloss_${TRLOSS}_pull_${PULL}_temp_${TEMP}_$SLURM_ARRAY_TASK_ID
-    LOG_STDOUT="${EXP_FOLDER}/${EXP_NAME}.out"
-    LOG_STDERR="${EXP_FOLDER}/${EXP_NAME}.err"
-    python eval_incremental.py --model_path $BACKBONE_PATH \
-                               --data_root $DATA_PATH \
-                               --n_shots 5 \
-                               --eval_mode few-shot-incremental-fine-tune \
-                               --classifier linear \
-                               --min_novel_epochs 20 \
-                               --glove \
-                               --learning_rate 0.002 \
-                               --use_episodes \
-                               --freeze_backbone_at 1 \
-                               --num_workers 0 \
-                               --label_pull $PULL \
-                               --pulling regularize \
-                               --skip_val \
-                               --temperature $TEMP \
-                               --lmbd_reg_transform_w $LMBD \
-                               --target_train_loss $TRLOSS > $LOG_STDOUT 2> $LOG_STDERR
-fi
-done
-done
-done
-done
+# cnt=0
+# for LMBD in 0.03; do
+# for TRLOSS in 0.0; do
+# for TEMP in 1.5; do
+# for PULL in 0.01 0.03; do
+# (( cnt++ ))
+# if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then
+#     EXP_NAME=glove_lambda_${LMBD}_trloss_${TRLOSS}_pull_${PULL}_temp_${TEMP}_$SLURM_ARRAY_TASK_ID
+#     LOG_STDOUT="${EXP_FOLDER}/${EXP_NAME}.out"
+#     LOG_STDERR="${EXP_FOLDER}/${EXP_NAME}.err"
+#     python eval_incremental.py --model_path $BACKBONE_PATH \
+#                                --data_root $DATA_PATH \
+#                                --n_shots 5 \
+#                                --eval_mode few-shot-incremental-fine-tune \
+#                                --classifier linear \
+#                                --min_novel_epochs 20 \
+#                                --glove \
+#                                --learning_rate 0.002 \
+#                                --use_episodes \
+#                                --freeze_backbone_at 1 \
+#                                --num_workers 0 \
+#                                --label_pull $PULL \
+#                                --pulling regularize \
+#                                --skip_val \
+#                                --temperature $TEMP \
+#                                --lmbd_reg_transform_w $LMBD \
+#                                --target_train_loss $TRLOSS > $LOG_STDOUT 2> $LOG_STDERR
+# fi
+# done
+# done
+# done
+# done
 # For debugging. 
 
 # No language fine tuning few-shot with label pull
-# python eval_incremental.py --model_path $BACKBONE_PATH \
-#                            --data_root $DATA_PATH \
-#                            --n_shots 5 \
-#                            --eval_mode few-shot-incremental-fine-tune \
-#                            --classifier linear \
-#                            --min_novel_epochs 20 \
-#                            --glove \
-#                            --learning_rate 0.002 \
-#                            --use_episodes \
-#                            --label_pull 0.2 \
-#                            --pulling regularize \
-#                            --num_workers 0 \
-#                            --temperature 3.0 \
-#                            --lmbd_reg_transform_w 0.3 \
-#                            --target_train_loss 0.0
+python eval_incremental.py --model_path $BACKBONE_PATH \
+                           --data_root $DATA_PATH \
+                           --n_shots 5 \
+                           --eval_mode few-shot-incremental-fine-tune \
+                           --classifier linear \
+                           --min_novel_epochs 20 \
+                           --glove \
+                           --learning_rate 0.002 \
+                           --use_episodes \
+                           --label_pull 0.03 \
+                           --pulling regularize \
+                           --num_workers 0 \
+                           --temperature 2.0 \
+                           --lmbd_reg_transform_w 0.03 \
+                           --target_train_loss 0.0 \
+                           --save_preds_0 \
+                           --skip_val
 
 
 # # No language fine tuning few-shot

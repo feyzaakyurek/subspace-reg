@@ -50,14 +50,15 @@ BIAS_BACKBONE_PATH="${DUMPED_PATH}/backbones/linear/resnet12_miniImageNet_linear
 NOBIAS_BACKBONE_PATH="${DUMPED_PATH}/backbones/linear/resnet12_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain_classifier_linear_8075566/resnet12_last.pth"
 python eval_incremental.py --model_path $NOBIAS_BACKBONE_PATH \
                            --data_root $DATA_PATH \
-                           --n_shots 1 \
+                           --n_shots 5 \
                            --classifier linear \
                            --eval_mode hierarchical-incremental-few-shot \
                            --novel_epochs 20 \
                            --learning_rate 0.002 \
                            --freeze_backbone_at 1 \
-                           --target_train_loss 0.5
-#                            --use_episodes true \
+                           --target_train_loss 0.5 \
+                           --n_aug_support_samples 3
+#                            --use_episodes
 
 
 # Checklist to run an array job.
