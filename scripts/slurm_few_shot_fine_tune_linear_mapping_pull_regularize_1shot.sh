@@ -8,11 +8,11 @@
 #SBATCH --array=1-8
 #SBATCH --output=dumped/%A_%a.out
 #SBATCH --error=dumped/%A_%a.err
-#SBATCH --job-name=mini1linpull
+#SBATCH --job-name=mini_1linD
 
 
 DUMPED_PATH="/home/gridsan/akyurek/git/rfs-incremental/dumped"
-EXP_FOLDER=$DUMPED_PATH/"1shot/converge/finetune_linear_mapping_pull_new_episodes"
+EXP_FOLDER=$DUMPED_PATH/"1shot/converge/finetune_linear_mapping_pull_new_episodes_delta"
 DATA_PATH="/home/gridsan/groups/akyureklab/rfs-incremental/data"
 BACKBONE_PATH="${DUMPED_PATH}/backbones/linear/resnet12_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain_classifier_linear_8075566/resnet12_last_with_mapping.pth"
 
@@ -20,12 +20,12 @@ mkdir -p $EXP_FOLDER
 
 cnt=0
 for LMBD in 0.02; do
-for TEMP in 1.5 2.0; do
-for PULL in 0.01 0.03; do
-for LR in 0.003 0.006; do
+for PULL in 0.005 0.002; do
+for WD in 5e-3 5e-4; do
+for LR in 0.003 0.002; do
 (( cnt++ ))
 if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then
-    EXP_NAME=lambda_${LMBD}_temp_${TEMP}_pull_${PULL}_lr_${LR}_maxepochs_1000_${SLURM_ARRAY_TASK_ID}
+    EXP_NAME=lambda_${LMBD}_pull_${PULL}_lr_${LR}_wd_${WD}_maxepochs_1000_${SLURM_ARRAY_TASK_ID}
     LOG_STDOUT="${EXP_FOLDER}/${EXP_NAME}.out"
     LOG_STDERR="${EXP_FOLDER}/${EXP_NAME}.err"
     python eval_incremental.py --model_path $BACKBONE_PATH \
@@ -41,8 +41,8 @@ if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then
                                --pulling regularize \
                                --lmbd_reg_transform_w $LMBD \
                                --target_train_loss 0.0 \
-                               --temperature $TEMP \
                                --glove \
+                               --weight_decay $WD \
                                --max_novel_epochs 1000 \
                                --num_workers 0 \
                                --skip_val \
@@ -52,8 +52,8 @@ done
 done
 done
 done
-# 
-# For debugging. 
+#
+# For debugging.
 
 # No language fine tuning few-shot with label pull
 # python eval_incremental.py --model_path $BACKBONE_PATH \
@@ -92,7 +92,7 @@ done
 # #                            --use_episodes \
 # #                            --neval_episodes 1 \
 # #                            --track_weights
-                           
+
 # CUDA_VISIBLE_DEVICES=6 python eval_incremental.py --model_path $BACKBONE_PATH \
 #                            --data_root $DATA_PATH \
 #                            --n_shots 5 \
@@ -110,16 +110,16 @@ done
 #                            --word_embed_size 500 \
 #                            --track_label_inspired_weights \
 #                            --track_weights \
-#                            --word_embed_size 500 # > labelpullnon0.out                    
-# #  
+#                            --word_embed_size 500 # > labelpullnon0.out
+# #
 # #                            --track_weights \
 # --glove \
-# 
-#                            
+#
+#
 # Checklist to run an array job.
 # 1. Make sure total number of experiments matches the array param in sbatch.
 # 2. Make sure the order that params are written to file matches the reassignment.
-# 3. 
+# 3.
 
 
 ##export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
@@ -144,12 +144,12 @@ done
 # # and save them to a temp params file.sc
 # DUMPED_PATH="/home/gridsan/akyurek/git/rfs-incremental/dumped"
 # FILE="$DUMPED_PATH/${SLURM_ARRAY_TASK_ID}_temp_hyperparameters.txt"
-# rm $FILE 
+# rm $FILE
 
 # for LMBD in 0.2 0.3; do
 #     for TRLOSS in 0.5 0.55 0.6; do
 #         for NOVELEPOCH in 20; do
-#             for LR in 0.002 0.001; do 
+#             for LR in 0.002 0.001; do
 #                 for PULL in 0.0 0.05 0.1; do
 #                     echo "${LMBD} ${TRLOSS} ${NOVELEPOCH} ${LR} ${PULL}" >> $FILE
 #                 done
@@ -160,7 +160,7 @@ done
 
 
 # # Read the SLURM_ARRAY_TASK_ID line from the params file.
-# LINE=$(sed "${SLURM_ARRAY_TASK_ID}q;d" $FILE) 
+# LINE=$(sed "${SLURM_ARRAY_TASK_ID}q;d" $FILE)
 # read -ra PARAMS<<< "$LINE"
 
 # LMBD="${PARAMS[0]}"
@@ -191,5 +191,3 @@ done
 #                            --freeze_backbone_at 1 \
 #                            --lmbd_reg_transform_w $LMBD \
 #                            --target_train_loss $TRLOSS > $LOG_STDOUT 2> $LOG_STDERR
-                           
-

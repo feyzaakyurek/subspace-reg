@@ -5,25 +5,24 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=6
 #SBATCH --gres=gpu:volta:1
-#SBATCH --array=1-4
+#SBATCH --array=1-1
 #SBATCH --output=dumped/%A_%a.out
 #SBATCH --error=dumped/%A_%a.err
-#SBATCH --job-name=mini5linpull
+#SBATCH --job-name=mini_5linD
 
 
 DUMPED_PATH="/home/gridsan/akyurek/git/rfs-incremental/dumped"
-EXP_FOLDER=$DUMPED_PATH/"converge/finetune_linear_mapping_pull_new_episodes"
+EXP_FOLDER=$DUMPED_PATH/"converge/finetune_linear_mapping_pull_new_episodes_delta"
 DATA_PATH="/home/gridsan/groups/akyureklab/rfs-incremental/data"
 BACKBONE_PATH="${DUMPED_PATH}/backbones/linear/resnet12_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain_classifier_linear_8075566/resnet12_last_with_mapping.pth"
 mkdir -p $EXP_FOLDER
 
 cnt=0
 for LMBD in 0.03; do
-for TEMP in 1.5 2.0; do
-for PULL in 0.01 0.03; do
+for PULL in 0.03; do
 (( cnt++ ))
 if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then
-    EXP_NAME=lambda_${LMBD}_temp_${TEMP}_pull_${PULL}_${SLURM_ARRAY_TASK_ID}
+    EXP_NAME=lambda_${LMBD}_pull_${PULL}_${SLURM_ARRAY_TASK_ID}
     LOG_STDOUT="${EXP_FOLDER}/${EXP_NAME}.out"
     LOG_STDERR="${EXP_FOLDER}/${EXP_NAME}.err"
     python eval_incremental.py --model_path $BACKBONE_PATH \
@@ -39,13 +38,11 @@ if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then
                                --lmbd_reg_transform_w $LMBD \
                                --pulling regularize \
                                --min_novel_epochs 20 \
-                               --temperature $TEMP \
                                --num_workers 0 \
                                --glove \
                                --skip_val \
                                --attraction_override "mapping_linear_label2image" > $LOG_STDOUT 2> $LOG_STDERR
 fi
-done
 done
 done
 

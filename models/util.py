@@ -1,8 +1,6 @@
-from __future__ import print_function
+# from __future__ import print_function
 import torch
 import pickle
-# import ipdb
-import numpy as np
 import re
 
 def create_model(name, n_cls, opt, vocab=None, dataset='miniImageNet'):

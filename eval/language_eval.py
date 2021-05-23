@@ -70,6 +70,7 @@ def eval_base(net, base_batch, criterion, vocab_all=None, df=None, return_preds=
         output = net(input)
         loss = criterion(output, target)
         acc1, acc5 = accuracy(output, target, topk=(1, 5))
+
         if vocab_all:
             base = output[:,:len(vocab_all)]
             bacc1,bacc5 = accuracy(base, target, topk=(1, 5))
@@ -405,24 +406,24 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
 
         ######## To save preds (temporary, comment out below later) ########
         if opt.save_preds_0:
-            _, base_query_ys, *_ = base_batch
+            *_, base_query_ys = base_batch
             base_query_ys = base_query_ys.squeeze(0)
             acc_base_, base_preds  = eval_base(net, base_batch, criterion, vocab_all, return_preds=True)
             id2orig = {}
 
             for k,v in orig2id.items():
                 id2orig[v] = k
-            print("!!! Mini imagenet hard coded 64. !!")
-            query_ys_pred = [id2orig[k.item()] if k>=64 else k.item() for k in query_ys_pred]
-            base_preds = [id2orig[k.item()] if k>=64 else k.item() for k in base_preds]
+            base_size = net.num_classes
+            query_ys_pred = [id2orig[k.item()] if k>=base_size else k.item() for k in query_ys_pred]
+            base_preds = [id2orig[k.item()] if k>=base_size else k.item() for k in base_preds]
 
             temp_df = pd.DataFrame({"Episode": np.repeat(idx, len(query_ys)+len(base_query_ys)),
                                     "Gold": np.concatenate((query_ys, base_query_ys),0),
                                     "Prediction": np.concatenate((query_ys_pred, base_preds),0).astype(int)})
             preds_df = pd.concat([preds_df, temp_df], 0)
 
-            if idx == 5:
-                preds_df.to_csv(f"csv_files/{opt.eval_mode}_predictions.csv", index=False)
+            if idx == 20:
+                preds_df.to_csv(f"csv_files/{opt.dataset}_{opt.n_shots}_{opt.label_pull}_predictions.csv", index=False)
                 exit(0)
         ######## To save preds (temporary, comment out above later) ########
 

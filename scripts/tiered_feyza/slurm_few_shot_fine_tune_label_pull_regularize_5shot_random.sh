@@ -5,50 +5,43 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:volta:1
-#SBATCH --array=1-4
+#SBATCH --array=1-8
 #SBATCH --output=dumped/%A_%a.out
 #SBATCH --error=dumped/%A_%a.err
-#SBATCH --job-name=mini_1SubD+
+#SBATCH --job-name=tiered_random5
 
 
-DUMPED_PATH="/home/gridsan/akyurek/git/rfs-incremental/dumped"
-EXP_FOLDER=$DUMPED_PATH/"1shot/converge/finetune_1shot_distance2subspace_delta"
-DATA_PATH="/home/gridsan/groups/akyureklab/rfs-incremental/data"
-BACKBONE_PATH="${DUMPED_PATH}/backbones/linear/resnet12_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain_classifier_linear_8075566/resnet12_last.pth"
+DUMPED_PATH="/raid/lingo/akyurek/git/rfs-incremental/dumped"
+EXP_FOLDER=$DUMPED_PATH/"tiered/finetune_5shot_label_pull"
+DATA_PATH="/raid/lingo/akyurek/git/rfs-incremental/data"
+BACKBONE_PATH="${DUMPED_PATH}/backbones/tieredImageNet/linear/resnet18/bias_false/resnet18_last.pth"
 mkdir -p $EXP_FOLDER
 
 cnt=0
-for LMBD in 0.02; do
-for TRLOSS in 0.0; do
-for PULL in 0.005 0.003; do
-for LR in 0.003 0.006; do
-for WD in 5e-5 5e-5; do
+for LMBD in 0.2 0.3; do
+for TRLOSS in 1.0 1.2; do
+for PULL in 0.2 0.3; do
 (( cnt++ ))
 if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then
-    EXP_NAME=lambda_${LMBD}_trloss_${TRLOSS}_pull_${PULL}_lr_${LR}_wd_${WD}_maxepochs_1000_${SLURM_ARRAY_TASK_ID}
+    EXP_NAME=random_lambda_${LMBD}_trloss_${TRLOSS}_pull_${PULL}_${SLURM_ARRAY_TASK_ID}
     LOG_STDOUT="${EXP_FOLDER}/${EXP_NAME}.out"
     LOG_STDERR="${EXP_FOLDER}/${EXP_NAME}.err"
     python eval_incremental.py --model_path $BACKBONE_PATH \
                                --data_root $DATA_PATH \
-                               --n_shots 1 \
+                               --n_shots 5 \
+                               --dataset tieredImageNet \
                                --eval_mode few-shot-incremental-fine-tune \
                                --classifier linear \
-                               --min_novel_epochs 20 \
-                               --learning_rate $LR \
-                               --attraction_override "distance2subspace" \
+                               --novel_epochs 10 \
+                               --learning_rate 0.001 \
+                               --word_embed_path "random_embeds" \
                                --freeze_backbone_at 1 \
                                --label_pull $PULL \
-                               --num_workers 0 \
-                               --skip_val \
-                               --use_episodes \
-                               --max_novel_epochs 1000 \
+                               --glove \
                                --pulling regularize \
-                               --weight_decay $WD \
                                --lmbd_reg_transform_w $LMBD \
                                --target_train_loss $TRLOSS > $LOG_STDOUT 2> $LOG_STDERR
 fi
-done
-done
 done
 done
 done

@@ -5,14 +5,14 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:volta:1
-#SBATCH --array=1-12
+#SBATCH --array=1-2
 #SBATCH --output=dumped/%A_%a.out
 #SBATCH --error=dumped/%A_%a.err
-#SBATCH --job-name=pull5sbert
+#SBATCH --job-name=mini_sbert5D
 
 
 DUMPED_PATH="/home/gridsan/akyurek/git/rfs-incremental/dumped"
-EXP_FOLDER=$DUMPED_PATH/"converge/finetune_sbert_pull_new_episodes"
+EXP_FOLDER=$DUMPED_PATH/"converge/finetune_sbert_pull_new_episodes_delta"
 DATA_PATH="/home/gridsan/groups/akyureklab/rfs-incremental/data"
 # BACKBONE_PATH="${DUMPED_PATH}/backbones/linear/resnet12_miniImageNet_linear_classifier_wbias/resnet12_last.pth"
 BACKBONE_PATH="${DUMPED_PATH}/backbones/linear/resnet12_miniImageNet_lr_0.05_decay_0.0005_trans_A_trial_pretrain_classifier_linear_8075566/resnet12_last.pth"
@@ -20,10 +20,10 @@ BACKBONE_PATH="${DUMPED_PATH}/backbones/linear/resnet12_miniImageNet_lr_0.05_dec
 mkdir -p $EXP_FOLDER
 
 cnt=0
-for LMBD in 0.03 0.2; do
+for LMBD in 0.03; do
 for TRLOSS in 0.0; do
-for TEMP in 1.0 1.5; do
-for PULL in 0.01 0.03 0.5; do # more pull later
+for TEMP in 1.5 2.0; do
+for PULL in 0.01; do # more pull later
 (( cnt++ ))
 if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then
     EXP_NAME=lambda_${LMBD}_trloss_${TRLOSS}_pull_${PULL}_temp_${TEMP}_attraction_sbert_${SLURM_ARRAY_TASK_ID}
