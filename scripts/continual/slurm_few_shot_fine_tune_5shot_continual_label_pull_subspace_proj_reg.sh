@@ -5,25 +5,25 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:volta:1
-#SBATCH --array=1-9
+#SBATCH --array=1-10
 #SBATCH --output=dumped/%A_%a.out
 #SBATCH --error=dumped/%A_%a.err
-#SBATCH --job-name=cont5distsubtrloss
+#SBATCH --job-name=cont5distsub
 
 
 DUMPED_PATH="/home/gridsan/akyurek/git/rfs-incremental/dumped"
-EXP_FOLDER=$DUMPED_PATH/"continual/finetune_label_pull_random_distance2subspace"
+EXP_FOLDER=$DUMPED_PATH/"continual/finetune_label_pull_random_distance2subspace_converge_seeds"
 DATA_PATH="/home/gridsan/akyurek/git/rfs-incremental/data"
 
 
 mkdir -p $EXP_FOLDER
 
 cnt=0
-for TRLOSS in 1.2; do
+for TRLOSS in 0.0; do
 for LR in 0.002; do
 for LMBD in 0.2; do
 for LMBDN in 0.1; do
-for PULL in 0.1; do
+for PULL in 1.0; do
 for SEED in {1..10}; do
 (( cnt++ ))
 if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then
@@ -31,7 +31,7 @@ if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then
     LOG_STDOUT="${EXP_FOLDER}/${EXP_NAME}.out"
     LOG_STDERR="${EXP_FOLDER}/${EXP_NAME}.err"
     BACKBONE_PATH="${DUMPED_PATH}/backbones/continual/resnet18/${SEED}/resnet18_last.pth"
-    
+
     python eval_incremental.py --model_path $BACKBONE_PATH \
                            --model resnet18 \
                            --no_dropblock \
@@ -52,7 +52,8 @@ if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then
                            --glove \
                            --lmbd_reg_novel $LMBDN \
                            --set_seed $SEED \
-                           --attraction_override "distance2subspace" > $LOG_STDOUT 2> $LOG_STDERR
+                           --attraction_override "distance2subspace" \
+                           --save_preds_0 > $LOG_STDOUT 2> $LOG_STDERR
 fi
 done
 done
@@ -61,7 +62,7 @@ done
 done
 done
 
-# For debugging.                           
+# For debugging.
 
 
 # No language fine tuning few-shot
@@ -86,10 +87,10 @@ done
 #                            --stable_epochs 2 \
 #                            --num_workers 0 \
 #                            --attraction_override "distance2subspace"
-                           
+
 
 
 # Checklist to run an array job.
 # 1. Make sure total number of experiments matches the array param in sbatch.
 # 2. Make sure the order that params are written to file matches the reassignment.
-# 3. 
+# 3.

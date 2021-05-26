@@ -26,7 +26,7 @@ from dataset.transform_cfg import transforms_test_options, transforms_list
 from util import create_and_save_embeds, restricted_float, create_and_save_descriptions, create_and_save_synonyms
 from eval.meta_eval import incremental_test, meta_hierarchical_incremental_test
 from eval.zero_eval import zero_shot_test, zero_shot_incremental_test
-from eval.language_eval import few_shot_language_incremental_test, few_shot_finetune_incremental_test
+from eval.language_eval import few_shot_finetune_incremental_test
 # import wandb
 # print("!!!!! WANDB_MODE: ", os.environ['WANDB_MODE'])
 # run = wandb.init(project="lil", mode="offline")
@@ -38,8 +38,8 @@ def main():
     opt = parse_option_eval()
 
     # Add git commit hash
-    process = subprocess.Popen(['git', 'rev-parse', '--short', 'HEAD'], 
-                               shell=False, 
+    process = subprocess.Popen(['git', 'rev-parse', '--short', 'HEAD'],
+                               shell=False,
                                stdout=subprocess.PIPE)
     git_head_hash = process.communicate()[0].strip()
     opt.git_head_hash = git_head_hash.decode()
@@ -180,7 +180,7 @@ def main():
 
     # Load model if available, check bias.
     ckpt = torch.load(opt.model_path)
-    
+
     # If language classifiers are used, then we'll need the embeds recorded.
     if opt.classifier in ["lang-linear", "description-linear"]:
         opt.multip_fc = ckpt['opt'].multip_fc
@@ -193,7 +193,7 @@ def main():
         vocab_train = [name for name in base_test_loader.dataset.label2human if name != '']
         vocab_test = [name for name in meta_testloader.dataset.label2human if name != '']
         vocab_val = [name for name in meta_valloader.dataset.label2human if name != '']
-        vocab_all = vocab_train + vocab_val + vocab_test 
+        vocab_all = vocab_train + vocab_val + vocab_test
         if opt.classifier == "description-linear":
             create_and_save_descriptions(opt, vocab_all)
         else:

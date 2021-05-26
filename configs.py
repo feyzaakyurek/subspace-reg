@@ -62,7 +62,8 @@ def parse_option_eval():
                             help='Save the classifier weights to a csv file.')
     parser.add_argument('--track_label_inspired_weights', action='store_true',
                             help='Save the label inspired weights to a csv file.')
-    parser.add_argument('--save_preds_0', action='store_true', help='Save predictions for the first episode.' ) # TODO: This may not be available for every evalmode
+    parser.add_argument('--save_preds_0', action='store_true',
+                        help='Save predictions for the first episode.')  # TODO: This may not be available for every evalmode
     parser.add_argument('--use_synonyms', action='store_true', help='Use synonyms.') # TODO
 
     if parser.parse_known_args()[0].eval_mode in ["few-shot-incremental-fine-tune"]:
@@ -102,7 +103,7 @@ def parse_option_eval():
         parser.add_argument('--orig_alpha', type=float, default=1.0)
         parser.add_argument('--transform_query_size', type=int, default=None, help='Output size of key, query, value in attention.')
 
-    
+
     if parser.parse_known_args()[0].eval_mode in ["few-shot-incremental-fine-tune"]:
         parser.add_argument('--word_embed_size', type=int, default=500,
                             help='Word embedding classifier')
@@ -120,7 +121,7 @@ def parse_option_eval():
                             help='Instead of label pullers attract to elsewhere.')
         parser.add_argument('--lmbd_reg_novel',  type=float, default=None,
                             help='regularization for the novel classes in previous sessions.')
-        
+
         parser.add_argument('--stable_epochs', type=int, default=10,
                             help='How many stable epochs before stopping.')
         parser.add_argument('--convergence_epsilon', type=float, default=1e-4)
