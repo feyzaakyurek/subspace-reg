@@ -418,22 +418,22 @@ def main():
                                                         vis=True)
                 df.to_csv(f"vis_{opt.eval_mode}_pulling_{opt.pulling}_{opt.label_pull}_target_loss_{opt.target_train_loss}_synonyms_{opt.use_synonyms}.csv", index=False)
 
-        if not opt.track_weights and not opt.track_label_inspired_weights:
-            start = time.time()
-            opt.split = "test" # TODO: run only for best val.
-            opt.neval_episodes = original_nepisodes
+        # if not opt.track_weights and not opt.track_label_inspired_weights:
+        start = time.time()
+        opt.split = "test" # TODO: run only for best val.
+        opt.neval_episodes = original_nepisodes
 
-            (novel, novelstd), (base, basestd), (mean, meanstd) = few_shot_finetune_incremental_test(model,
-                                                             ckpt,
-                                                             criterion,
-                                                             meta_testloader,
-                                                             base_test_loader,
-                                                             opt)
-            test_time = time.time() - start
+        (novel, novelstd), (base, basestd), (mean, meanstd) = few_shot_finetune_incremental_test(model,
+                                                         ckpt,
+                                                         criterion,
+                                                         meta_testloader,
+                                                         base_test_loader,
+                                                         opt)
+        test_time = time.time() - start
 #             avg_score = (base+novel)/2
-            print('test_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel, novelstd, test_time))
-            print('test_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base, basestd, test_time))
-            print('test_acc_average: {:.4f}, std: {:.4f}, time: {:.1f}'.format(mean, meanstd, test_time))
+        print('test_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel, novelstd, test_time))
+        print('test_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base, basestd, test_time))
+        print('test_acc_average: {:.4f}, std: {:.4f}, time: {:.1f}'.format(mean, meanstd, test_time))
 
     elif opt.eval_mode == "few-shot":
         if not opt.skip_val:

@@ -112,7 +112,7 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
     # Used for creation of confusion matrices.
     if opt.save_preds_0:
         preds_df = pd.DataFrame(columns = ["Episode", "Gold", "Prediction"])
-    
+
     # Reset seeds.
     torch.manual_seed(opt.set_seed)
     np.random.seed(opt.set_seed)
@@ -252,11 +252,11 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
                                             net.classifier.weight[len(vocab_base):,:],
                                             base_weight)
                 else:
-                    if opt.attraction_override == "distance2subspace":   
+                    if opt.attraction_override == "distance2subspace":
                         pullers = lang_puller.get_projected_weight(opt.label_pull,
                                                                    base_weight,
                                                                    net.classifier.weight[len(vocab_base):,:])
-                    
+
                     reg = lang_puller.loss1(opt.label_pull,
                                             pullers,
                                             net.classifier.weight[len(vocab_base):,:])
@@ -310,12 +310,12 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
                                                                                    epoch)
 
             if opt.track_label_inspired_weights:
-                inspired_weights = label_inspired_weights.clone().cpu().numpy()
-                for k,lbl in enumerate(vocab_novel):
+                inspired_weights = pullers.detach().clone().cpu().numpy()
+                for k, lbl in enumerate(vocab_novel):
                     track_inspired.loc[len(track_inspired)] = [idx, lbl, epoch, inspired_weights[k]]
 
 
-            if opt.track_weights:
+            if opt.track_weights and epoch % 10 == 0:
                 classifier_weights = net.classifier.weight.clone().detach().cpu().numpy()
                 for k,lbl in enumerate(vocab_base):
                     track_weights.loc[len(track_weights)] = [idx, "base", lbl, vocab_base[k],
@@ -414,26 +414,33 @@ def few_shot_finetune_incremental_test(net, ckpt, criterion, meta_valloader, bas
             for k,v in orig2id.items():
                 id2orig[v] = k
             base_size = net.num_classes
-            query_ys_pred = [id2orig[k.item()] if k>=base_size else k.item() for k in query_ys_pred]
-            base_preds = [id2orig[k.item()] if k>=base_size else k.item() for k in base_preds]
+
+            query_ys_pred_orig = [id2orig[k.item()] if k>=base_size else k.item() for k in query_ys_pred]
+            base_preds_orig = [id2orig[k.item()] if k>=base_size else k.item() for k in base_preds]
+            preds_all_orig = np.concatenate((query_ys_pred_orig,base_preds_orig),0).astype(int)
+            preds_all = np.concatenate((query_ys_pred, base_preds),0).astype(int)
+            gold_all = np.concatenate((query_ys_id, base_query_ys),0).astype(int)
+            gold_label = [vocab_all[el] for el in gold_all]
+            predicted_label = [vocab_all[el] for el in preds_all]
 
             temp_df = pd.DataFrame({"Episode": np.repeat(idx, len(query_ys)+len(base_query_ys)),
-                                    "Gold": np.concatenate((query_ys, base_query_ys),0),
-                                    "Prediction": np.concatenate((query_ys_pred, base_preds),0).astype(int)})
+                                    "Gold_Label": gold_label,
+                                    "Predicted_Label": predicted_label,
+                                    "Gold": gold_all,
+                                    "Prediction": preds_all,
+                                    "Gold_Original": np.concatenate((query_ys, base_query_ys),0),
+                                    "Prediction_Original": preds_all_orig})
             preds_df = pd.concat([preds_df, temp_df], 0)
 
-            if idx == 20:
-                preds_df.to_csv(f"csv_files/{opt.dataset}_{opt.n_shots}_{opt.label_pull}_predictions.csv", index=False)
-                exit(0)
+            if idx == 200:
+                preds_df.to_csv(f"csv_files_clean/{opt.dataset}_{opt.n_shots}_{opt.label_pull}_{opt.attraction_override}_predictions.csv", index=False)
         ######## To save preds (temporary, comment out above later) ########
 
-
-    if opt.track_label_inspired_weights:
-        track_inspired.to_csv(f"track_inspired_{opt.eval_mode}_pulling_{opt.pulling}_{opt.label_pull}_target_loss_{opt.target_train_loss}_synonyms_{opt.use_synonyms}.csv", index=False)
-
-    if opt.track_weights:
-        track_weights.to_csv(f"track_weights_{opt.eval_mode}_pulling_{opt.pulling}_{opt.label_pull}_target_loss_{opt.target_train_loss}_synonyms_{opt.use_synonyms}.csv", index=False)
-
+        if idx == 200:
+            if opt.track_label_inspired_weights:
+                track_inspired.to_csv(f"csv_files_clean/track_inspired_{opt.dataset}_{opt.n_shots}_{opt.label_pull}_{opt.attraction_override}.csv", index=False)
+            if opt.track_weights:
+                track_weights.to_csv(f"csv_files_clean/track_weights_{opt.dataset}_{opt.n_shots}_{opt.label_pull}_{opt.attraction_override}.csv", index=False)
     if vis:
         return df
     else:
