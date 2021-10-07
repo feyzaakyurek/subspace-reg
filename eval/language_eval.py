@@ -12,7 +12,7 @@ from .util import accuracy, image_formatter,\
 mean_confidence_interval, get_vocabs, drop_a_dim,\
 get_optim, freeze_backbone_weights,\
 AverageMeter, log_episode
-
+from dataset.memory import Memory
 from models.resnet_language import LangPuller, Pusher
 import pandas as pd
 
@@ -21,25 +21,34 @@ def validate_fine_tune(query_xs, query_ys_id, net, criterion, opt, epoch):
     net.eval()
     with torch.no_grad():
         if torch.cuda.is_available():
-            query_xs = query_xs.cuda()
-            query_ys_id = query_ys_id.cuda()
+            if isinstance(query_xs, list):
+                acc1, acc5, losses, preds = [],[],[],[]
+                for i,item in enumerate(query_xs):
+                    r = validate_fine_tune(item, query_ys_id[i], net, criterion, opt, epoch)
+                    acc1.append(r[0])
+                    acc5.append(r[1])
+                    losses.append(r[2])
+                    preds.append(r[3])
+                return acc1, acc5, losses, preds
+            else:
+                query_xs = query_xs.cuda()
+                query_ys_id = query_ys_id.cuda()
 
-            # compute output
-            output = net(query_xs)
-            loss = criterion(output, query_ys_id)
+                # compute output
+                output = net(query_xs)
+                loss = criterion(output, query_ys_id)
 
-            # measure accuracy and record loss
-            acc1, acc5 = accuracy(output, query_ys_id, topk=(1, 5))
-            query_ys_pred = torch.argmax(output, dim=1).detach().cpu().numpy()
-#             if opt.verbose:
-            if epoch % 10 == 0:
-                print('Test \t'
-                      'Loss {:10.4f}\t'
-                      'Acc@1 {:10.3f}\t'
-                      'Acc@5 {:10.3f}'.format(
-                       loss.item(), acc1[0], acc5[0]))
+                # measure accuracy and record loss
+                acc1, acc5 = accuracy(output, query_ys_id, topk=(1, 5))
+                query_ys_pred = torch.argmax(output, dim=1).detach().cpu().numpy()
+#                 if epoch % 10 == 0:
+#                     print('Test \t'
+#                           'Loss {:10.4f}\t'
+#                           'Acc@1 {:10.3f}\t'
+#                           'Acc@5 {:10.3f}'.format(
+#                            loss.item(), acc1[0], acc5[0]))
 
-    return acc1[0], acc5[0], loss.item(), query_ys_pred
+                return acc1[0], acc5[0], loss.item(), query_ys_pred
 
 
 def eval_base(net, base_batch, criterion, vocab_all=None, df=None, return_preds=False):
@@ -117,6 +126,12 @@ def few_shot_finetune_incremental_test(net,
     novel_query_collection = None  # XXX
     novel_query_collection_id = None  # XXX
     base_batch = next(base_valloader_it)  # XXXX Same base batch every time.
+    
+    # Create memory
+    if opt.memory_replay:
+        memory = Memory()
+#         memory = DataLoader(memoryd, batch_size=opt.test_batch_size, shuffle=True, drop_last=False)
+        
 
     # Initial validation on base samples.
     acc_base_ = eval_base(net, base_batch, criterion)
@@ -139,6 +154,8 @@ def few_shot_finetune_incremental_test(net,
             support_xs = torch.cat([support_xs, base_support_xs], 0)
         if vis:
             novelimgs = query_xs.detach().numpy()
+            
+        
 
         # Get vocabs for the loaders.
         if idx > 0:
@@ -187,13 +204,17 @@ def few_shot_finetune_incremental_test(net,
 
         # Add the new set of queries to the collection.
         if novel_query_collection_id is None:
-            novel_query_collection = query_xs
-            novel_query_collection_id = query_ys_id
+            novel_query_collection = [query_xs]
+            novel_query_collection_id = [query_ys_id]
         else:
-            novel_query_collection = torch.cat((novel_query_collection,
-                                                query_xs), 0)
-            novel_query_collection_id = torch.cat((novel_query_collection_id,
-                                                   query_ys_id), 0)
+#             novel_query_collection = torch.cat((novel_query_collection,
+#                                                 query_xs), 0)
+#             novel_query_collection_id = torch.cat((novel_query_collection_id,
+#                                                    query_ys_id), 0)
+
+            novel_query_collection.append(query_xs)
+            novel_query_collection_id.append(query_ys_id)
+            
 
         if base_support_loader is not None:
             support_ys_id = torch.cat([support_ys_id,
@@ -234,15 +255,15 @@ def few_shot_finetune_incremental_test(net,
             pusher = Pusher(opt, base_weight)
 
         # Validate before training. TODO
-        test_acc, *_ = validate_fine_tune(novel_query_collection,
-                                          novel_query_collection_id,
-                                          net,
-                                          criterion,
-                                          opt,
-                                          0)
+#         test_acc, *_ = validate_fine_tune(novel_query_collection,
+#                                           novel_query_collection_id,
+#                                           net,
+#                                           criterion,
+#                                           opt,
+#                                           0)
 
-        print('{:25} {:.4f}\n'.format("Novel incremental acc before fine-tune:",
-                                      test_acc.item()))
+#         print('{:25} {:.4f}\n'.format("Novel incremental acc before fine-tune:",
+#                                       test_acc[0].item()))
 
         # Optimizer
         optimizer = get_optim(net, opt)  # TODO anything to load from ckpt?
@@ -269,7 +290,12 @@ def few_shot_finetune_incremental_test(net,
             else:
                 output = net(support_xs)
                 loss = criterion(output, support_ys_id)
-
+                
+            # Memory replay
+            # CODE HERE
+            if opt.memory_replay and len(memory) > 0:
+                output_ = net(memory.data)
+                loss += criterion(output_, memory.labels)
 
             # Penalize the change in base classifier weights.
             if opt.lmbd_reg_transform_w is not None:
@@ -312,6 +338,7 @@ def few_shot_finetune_incremental_test(net,
             loss.backward()
             optimizer.step()
 
+            
 
 
             with torch.no_grad():
@@ -336,7 +363,6 @@ def few_shot_finetune_incremental_test(net,
 
                 if (epoch >= opt.max_novel_epochs) or (train_loss <= opt.target_train_loss and epoch >= opt.min_novel_epochs + 1):
                     stop_condition = False
-
 
 
             test_acc, test_acc_top5, test_loss, query_ys_pred = validate_fine_tune(novel_query_collection,
@@ -370,7 +396,16 @@ def few_shot_finetune_incremental_test(net,
 
             epoch += 1
 
-
+        # Sample from this session's support and add to memory
+        # CODE HERE
+        if opt.memory_replay:
+            inds = np.random.choice(opt.n_shots, opt.memory_replay)
+            margin = 5 * np.arange(5)
+            offset = np.arange(0,125,25)
+            inds = np.tile(margin + inds, (5,1)) + (np.tile(offset,(5,1))).T
+            inds = inds.flatten()
+            memory.additems(support_xs[inds, :], support_ys_id[inds])
+            
         # Evaluate base samples with the updated network
 #         base_batch = next(base_valloader_it) XXXX Same base batch every time.
         vis_condition = (vis and idx == 0)
@@ -380,9 +415,7 @@ def few_shot_finetune_incremental_test(net,
                               vocab_all = vocab_all if vis_condition else None,
                               df= df if vis_condition else None)
 
-        # Update meters.
-        acc_base.update(acc_base_)
-        acc_novel.update(test_acc.item())
+        
 
 
         # Little last-mile pull here.
@@ -420,11 +453,25 @@ def few_shot_finetune_incremental_test(net,
                   np.mean(pull_running_avg)), flush=True)
 
 
+        
+        
+        if isinstance(test_acc, list):
+            # Report accuracies from first session towards last
+            test_acc = [round(i.item(),2) for i in test_acc]
+            print("Novel session accuracies: ", test_acc)
+            test_acc = np.array(test_acc).mean()
+        else:
+            test_acc = test_acc.item()
+            
+        # Update meters.
+        acc_base.update(acc_base_)
+        acc_novel.update(test_acc)
+        
         w1 = 60 if opt.dataset == "miniImageNet" else 200 # opt.test_base_batch_size
         w2 = len(vocab_base) + len(vocab_novel) - 60
-        weighted_avg = (w1*acc_base_ + w2*test_acc.item())/(w1+w2)
+        weighted_avg = (w1*acc_base_ + w2*test_acc)/(w1+w2)
         weighted_avg_l.append(round(weighted_avg,2))
-        acc_novel_list.append(round(test_acc.item(),2))
+        acc_novel_list.append(round(test_acc,2))
         acc_base_list.append(round(acc_base_,2))
 
 
@@ -434,7 +481,7 @@ def few_shot_finetune_incremental_test(net,
         log_episode(novel_labels,
                     vocab_novel,
                     epoch,
-                    test_acc.item(),
+                    test_acc,
                     acc_base_,
                     acc_base.avg,
                     acc_novel.avg)
@@ -451,8 +498,8 @@ def few_shot_finetune_incremental_test(net,
                 id2orig[v] = k
 
             # base_size = net.num_classes
-            query_ys_pred_orig, novel_collective_ys_orig = map2original([query_ys_pred,
-                                                               novel_query_collection_id],
+            query_ys_pred_orig, novel_collective_ys_orig = map2original([query_ys_pred[0],
+                                                               novel_query_collection_id[0]],
                                                               [id2orig,
                                                                basec_map_rev])
             base_preds_orig, base_query_ys_orig = map2original([base_preds,
@@ -463,15 +510,15 @@ def few_shot_finetune_incremental_test(net,
 
             temp_df = pd.DataFrame({
                  "Episode": np.repeat(idx, len(novel_collective_ys_orig)+len(base_query_ys_orig)),
-                 "Gold": np.concatenate((novel_query_collection_id, base_query_ys), 0),
-                 "Prediction": np.concatenate((query_ys_pred, base_preds), 0).astype(int),
+                 "Gold": np.concatenate((novel_query_collection_id[0], base_query_ys), 0),
+                 "Prediction": np.concatenate((query_ys_pred[0], base_preds), 0).astype(int),
                  "Original_Gold": np.concatenate((novel_collective_ys_orig, base_query_ys_orig), 0),
                  "Original_Prediction": np.concatenate((query_ys_pred_orig, base_preds_orig), 0).astype(int)})
             preds_df = pd.concat([preds_df, temp_df], 0)
             if idx == iter_num-1:
-                filename = f"csv_files/seed_{opt.set_seed}_{opt.dataset}_{opt.n_shots}_{opt.label_pull}_{opt.attraction_override}_continual_{opt.continual}_predictions.csv"
+                filename = f"csv_files_mem/seed_{opt.set_seed}_{opt.dataset}_{opt.n_shots}_{opt.label_pull}_{opt.attraction_override}_continual_{opt.continual}_mem_{opt.memory_replay}_predictions.csv"
                 preds_df.to_csv(filename, index=False)
-                exit(0)
+#                 exit(0)
 #         ######## To save preds (temporary, comment out above later) ########
 
 

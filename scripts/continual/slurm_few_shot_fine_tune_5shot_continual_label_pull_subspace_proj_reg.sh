@@ -8,11 +8,11 @@
 #SBATCH --array=1-10
 #SBATCH --output=dumped/%A_%a.out
 #SBATCH --error=dumped/%A_%a.err
-#SBATCH --job-name=cont5distsub
+#SBATCH --job-name=cont5submem
 
 
 DUMPED_PATH="/home/gridsan/akyurek/git/rfs-incremental/dumped"
-EXP_FOLDER=$DUMPED_PATH/"continual/finetune_label_pull_random_distance2subspace_converge_seeds"
+EXP_FOLDER=$DUMPED_PATH/"continual/finetune_subspace_memory_base+novel_converge"
 DATA_PATH="/home/gridsan/akyurek/git/rfs-incremental/data"
 
 
@@ -49,10 +49,11 @@ if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then
                            --lmbd_reg_transform_w $LMBD \
                            --target_train_loss $TRLOSS \
                            --label_pull $PULL \
-                           --glove \
                            --lmbd_reg_novel $LMBDN \
                            --set_seed $SEED \
                            --attraction_override "distance2subspace" \
+                           --n_base_support_samples 1 \
+                           --memory_replay 1 \
                            --save_preds_0 > $LOG_STDOUT 2> $LOG_STDERR
 fi
 done
@@ -74,7 +75,7 @@ done
 #                            --n_shots 5 \
 #                            --classifier linear \
 #                            --eval_mode few-shot-incremental-fine-tune \
-#                            --novel_epochs 20 \
+#                            --min_novel_epochs 20 \
 #                            --learning_rate 0.002 \
 #                            --freeze_backbone_at 1 \
 #                            --test_base_batch_size 2000 \
@@ -86,7 +87,9 @@ done
 #                            --set_seed 2 \
 #                            --stable_epochs 2 \
 #                            --num_workers 0 \
-#                            --attraction_override "distance2subspace"
+#                            --attraction_override "distance2subspace" \
+#                            --memory_replay 1 \
+#                            --n_base_support_samples 1
 
 
 

@@ -126,7 +126,8 @@ def parse_option_eval():
                             help='How many stable epochs before stopping.')
         parser.add_argument('--convergence_epsilon', type=float, default=1e-4)
         parser.add_argument('--temperature', type=float, default=1)
-
+        parser.add_argument('--memory_replay', type=int, default=0,
+                            help="Keep samples from novel classes in memory.") # TODO: base
         if parser.parse_known_args()[0].label_pull is not None:
             parser.add_argument('--pulling', type=str, default="regularize",
                             help='How should we leverage label inspired weights?')

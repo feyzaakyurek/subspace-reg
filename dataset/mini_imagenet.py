@@ -297,55 +297,86 @@ class MetaImageNet(ImageNet):
 
     def __getitem__(self, item):
         if not self.use_episodes:
-            assert self.n_base_support_samples == 0 # this is not implemented for base support =! n_shot.
-            if self.fix_seed:
-                np.random.seed(item)
-                
-            if self.disjoint_classes:
-                cls_sampled = self.classes[:self.n_ways] # 
-                self.classes = self.classes[self.n_ways:]
-            else:
-                cls_sampled = np.random.choice(self.classes, self.n_ways, False)
-            support_xs = []
-            support_ys = []
-            query_xs = []
-            query_ys = []
-            for idx, cls in enumerate(np.sort(cls_sampled)):
-                imgs = np.asarray(self.data[cls]).astype('uint8')
-                support_xs_ids_sampled = np.random.choice(range(imgs.shape[0]), self.n_shots, False)
-                support_xs.append(imgs[support_xs_ids_sampled])
-                lbl = idx
-    #             if self.eval_mode in ["few-shot-incremental"]:
-    #                 lbl = 64+idx
-                if self.eval_mode in ["few-shot-incremental",
-                                      "zero-shot",
-                                      "zero-shot-incremental",
-                                      "few-shot-language-incremental",
-                                      "few-shot-incremental-fine-tune",
-                                      "few-shot-incremental-language-pretrain-linear-tune",
-                                      "hierarchical-incremental-few-shot"]:
-                    lbl = cls
-                support_ys.append([lbl] * self.n_shots) #
-                query_xs_ids = np.setxor1d(np.arange(imgs.shape[0]), support_xs_ids_sampled)
-                query_xs_ids = np.random.choice(query_xs_ids, self.n_queries, False)
-                query_xs.append(imgs[query_xs_ids])
-                query_ys.append([lbl] * query_xs_ids.shape[0]) #
-            support_xs, support_ys, query_xs, query_ys = np.array(support_xs), np.array(support_ys), np.array(query_xs), np.array(query_ys)
-            num_ways, n_queries_per_way, height, width, channel = query_xs.shape
+#             assert self.n_base_support_samples == 0 # this is not implemented for base support =! n_shot.
             
-            query_xs = query_xs.reshape((num_ways * n_queries_per_way, height, width, channel))
-            query_ys = query_ys.reshape((num_ways * n_queries_per_way, ))
+            if self.split == "train" and self.phase == "train" and self.n_base_support_samples > 0:
+                    assert self.n_base_support_samples > 0
+                    # These samples will be stored in memory for every episode.
+                    support_xs = []
+                    support_ys = []
+                    if self.fix_seed:
+                        np.random.seed(item)
+                    cls_sampled = np.random.choice(self.classes, len(self.classes), False)
+                    
+                    for idx, cls in enumerate(np.sort(cls_sampled)):
+                        imgs = np.asarray(self.data[cls]).astype('uint8')
+                        support_xs_ids_sampled = np.random.choice(range(imgs.shape[0]),
+                                                                  self.n_base_support_samples,
+                                                                  False)
+                        support_xs.append(imgs[support_xs_ids_sampled])
+                        support_ys.append([cls] * self.n_base_support_samples)    
+                    support_xs, support_ys = np.array(support_xs), np.array(support_ys)
+                    num_ways, n_queries_per_way, height, width, channel = support_xs.shape
+                    support_xs = support_xs.reshape((-1, height, width, channel))
+                    if self.n_base_aug_support_samples > 1:
+                        support_xs = np.tile(support_xs, (self.n_base_aug_support_samples, 1, 1, 1))
+                        support_ys = np.tile(support_ys.reshape((-1, )), (self.n_base_aug_support_samples))
+                    support_xs = np.split(support_xs, support_xs.shape[0], axis=0)
+                    support_xs = torch.stack(list(map(lambda x: self.train_transform(x.squeeze()), support_xs)))
 
-            support_xs = support_xs.reshape((-1, height, width, channel))
-            if self.n_aug_support_samples > 1:
-                support_xs = np.tile(support_xs, (self.n_aug_support_samples, 1, 1, 1))
-                support_ys = np.tile(support_ys.reshape((-1, )), (self.n_aug_support_samples))
-            support_xs = np.split(support_xs, support_xs.shape[0], axis=0)
-            query_xs = query_xs.reshape((-1, height, width, channel))
-            query_xs = np.split(query_xs, query_xs.shape[0], axis=0)
+                    # Dummy query.
+                    query_xs = support_xs
+                    query_ys = support_ys
+            else:
+            
+                if self.fix_seed:
+                    np.random.seed(item)
 
-            support_xs = torch.stack(list(map(lambda x: self.train_transform(x.squeeze()), support_xs)))
-            query_xs = torch.stack(list(map(lambda x: self.test_transform(x.squeeze()), query_xs)))
+                if self.disjoint_classes:
+                    cls_sampled = self.classes[:self.n_ways] # 
+                    self.classes = self.classes[self.n_ways:]
+                else:
+                    cls_sampled = np.random.choice(self.classes, self.n_ways, False)
+                support_xs = []
+                support_ys = []
+                query_xs = []
+                query_ys = []
+                for idx, cls in enumerate(np.sort(cls_sampled)):
+                    imgs = np.asarray(self.data[cls]).astype('uint8')
+                    support_xs_ids_sampled = np.random.choice(range(imgs.shape[0]), self.n_shots, False)
+                    support_xs.append(imgs[support_xs_ids_sampled])
+                    lbl = idx
+        #             if self.eval_mode in ["few-shot-incremental"]:
+        #                 lbl = 64+idx
+                    if self.eval_mode in ["few-shot-incremental",
+                                          "zero-shot",
+                                          "zero-shot-incremental",
+                                          "few-shot-language-incremental",
+                                          "few-shot-incremental-fine-tune",
+                                          "few-shot-incremental-language-pretrain-linear-tune",
+                                          "hierarchical-incremental-few-shot"]:
+                        lbl = cls
+                    support_ys.append([lbl] * self.n_shots) #
+                    query_xs_ids = np.setxor1d(np.arange(imgs.shape[0]), support_xs_ids_sampled)
+                    query_xs_ids = np.random.choice(query_xs_ids, self.n_queries, False)
+                    query_xs.append(imgs[query_xs_ids])
+                    query_ys.append([lbl] * query_xs_ids.shape[0]) #
+                support_xs, support_ys, query_xs, query_ys = np.array(support_xs), np.array(support_ys), np.array(query_xs), np.array(query_ys)
+                num_ways, n_queries_per_way, height, width, channel = query_xs.shape
+
+                query_xs = query_xs.reshape((num_ways * n_queries_per_way, height, width, channel))
+                query_ys = query_ys.reshape((num_ways * n_queries_per_way, ))
+
+                support_xs = support_xs.reshape((-1, height, width, channel))
+                if self.n_aug_support_samples > 1:
+                    support_xs = np.tile(support_xs, (self.n_aug_support_samples, 1, 1, 1))
+                    support_ys = np.tile(support_ys.reshape((-1, )), (self.n_aug_support_samples))
+                support_xs = np.split(support_xs, support_xs.shape[0], axis=0)
+                query_xs = query_xs.reshape((-1, height, width, channel))
+                query_xs = np.split(query_xs, query_xs.shape[0], axis=0)
+
+                support_xs = torch.stack(list(map(lambda x: self.train_transform(x.squeeze()), support_xs)))
+                query_xs = torch.stack(list(map(lambda x: self.test_transform(x.squeeze()), query_xs)))
             
         else:
             
@@ -361,7 +392,9 @@ class MetaImageNet(ImageNet):
                     
                     for idx, cls in enumerate(np.sort(cls_sampled)):
                         imgs = np.asarray(self.data[cls]).astype('uint8')
-                        support_xs_ids_sampled = np.random.choice(range(imgs.shape[0]), self.n_base_support_samples, False)
+                        support_xs_ids_sampled = np.random.choice(range(imgs.shape[0]),
+                                                                  self.n_base_support_samples,
+                                                                  False)
                         support_xs.append(imgs[support_xs_ids_sampled])
                         support_ys.append([cls] * self.n_base_support_samples)    
                     support_xs, support_ys = np.array(support_xs), np.array(support_ys)

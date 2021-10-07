@@ -8,11 +8,11 @@
 #SBATCH --array=1-10
 #SBATCH --output=dumped/%A_%a.out
 #SBATCH --error=dumped/%A_%a.err
-#SBATCH --job-name=cont_5label
+#SBATCH --job-name=cont5labelmem
 
 
 DUMPED_PATH="/home/gridsan/akyurek/git/rfs-incremental/dumped"
-EXP_FOLDER=$DUMPED_PATH/"continual"/"finetune_label_pull_converge_seeds"
+EXP_FOLDER=$DUMPED_PATH/"continual"/"finetune_label_pull_memory_base+novel_converge"
 DATA_PATH="/home/gridsan/akyurek/git/rfs-incremental/data"
 mkdir -p $EXP_FOLDER
 
@@ -54,6 +54,8 @@ if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then
                            --glove \
                            --temperature $TEMP \
                            --weight_decay $WD \
+                           --n_base_support_samples 1 \
+                           --memory_replay 1 \
                            --save_preds_0 > $LOG_STDOUT 2> $LOG_STDERR
 fi
 done
