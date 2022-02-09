@@ -1,42 +1,48 @@
-# RFS
+# Subspace Regularizers
 
-Representations for Few-Shot Learning (RFS). This repo covers the implementation of the following paper:  
+This repo contains the source code for the following paper:  
 
-**"Rethinking few-shot image classification: a good embedding is all you need?"** [Paper](https://arxiv.org/abs/2003.11539),  [Project Page](https://people.csail.mit.edu/yuewang/projects/rfs/) 
+**"Subspace Regularizers for Few-Shot Class Incremental Learning"** [Paper]( for Few-Shot Class Incremental Learning)
 
-If you find this repo useful for your research, please consider citing the paper  
-```
-@article{tian2020rethink,
-  title={Rethinking few-shot image classification: a good embedding is all you need?},
-  author={Tian, Yonglong and Wang, Yue and Krishnan, Dilip and Tenenbaum, Joshua B and Isola, Phillip},
-  journal={arXiv preprint arXiv:2003.11539},
-  year={2020}
-}
-```
 
 ## Installation
 
-This repo was tested with Ubuntu 16.04.5 LTS, Python 3.5, PyTorch 0.4.0, and CUDA 9.0. However, it should be compatible with recent PyTorch versions >=0.4.0
+Setup the conda environment using `environment.yml`.
 
-## Download Data
-The data we used here is preprocessed by the repo of [MetaOptNet](https://github.com/kjunelee/MetaOptNet), but we have
-renamed the file. Our version of data can be downloaded from here:
+```
+git clone https://github.com/feyzaakyurek/subspace-reg.git
+cd subspace-reg
+conda env create -f environment.yml
+```
+and activate it.
 
-[[DropBox]](https://www.dropbox.com/sh/6yd1ygtyc3yd981/AABVeEqzC08YQv4UZk7lNHvya?dl=0)
+## Download Data and Pretrained Models
+If running `multi-session` please download data from this [link](https://drive.google.com/file/d/14aOw3G3uOaaq7jPswLsDE080K0K-tkwJ/view?usp=sharing), uncompress the contents under `data/miniImageNet` and place `data` under this repo. You should have two files under `data/miniImageNet`: `all.pickle` and `class_names.txt`.
+
+If running `single-session`, download data from [here](https://github.com/renmengye/inc-few-shot-attractor-public) and place it under `data/[DATASETNAME]` replacing DATASETNAME with miniImageNet or tieredImageNet.
+
+Download pretrained models for `multi-session` from [here](https://drive.google.com/file/d/1VzjnZcjgwlQe7CK-Sl730In-WNPvom0b/view?usp=sharing) and place them under `dumped/backbones/continual/resnet18`. The numbered folder names refer to the seeds. Eventually you will have `dumped/backbones/continual/resnet18/1`, `dumped/backbones/continual/resnet18/2`, etc.
 
 ## Running
 
-Exemplar commands for running the code can be found in `scripts/run.sh`.
+Sample scripts are under `scripts/continual` for `multi-session` along with the scripts for `single-session`. In every script you will see a nested for loop which we used for hyperparameter tuning. Each experiment is run for 10 different seeds. If you are interested in only a single run, scroll down to the bottom for the respective command in every `.sh` file. 
 
-For unuspervised learning methods `CMC` and `MoCo`, please refer to the [CMC](http://github.com/HobbitLong/CMC) repo.
+The existing commands use memory (+M setup in the paper). In order to turn off memory replay, simply remove the options `--n_base_support_samples 1` and `--memory_replay 1` which will set them to zero. Make sure to edit your `EXP_FOLDER` in the scripts to avoid overriding your previous experiments.
 
 ## Contacts
-For any questions, please contact:
+Feel free to reach out to with questions.
 
-Yonglong Tian (yonglong@mit.edu)  
-Yue Wang (yuewang@csail.mit.edu)
+Afra Feyza Akyürek (akyurek@bu.edu)  
+Ekin Akyürek (akyurek@mit.edu)
 
 ## Acknowlegements
-Part of the code for distillation is from [RepDistiller](http://github.com/HobbitLong/RepDistiller) repo.
+A significant portion of this repository is based on [RFS source code](https://github.com/WangYueFt/rfs).
 
-
+```
+@article{akyurek2021subspace,
+  title={Subspace Regularizers for Few-Shot Class Incremental Learning},
+  author={Aky{\"u}rek, Afra Feyza and Aky{\"u}rek, Ekin and Wijaya, Derry and Andreas, Jacob},
+  journal={arXiv preprint arXiv:2110.07059},
+  year={2021}
+}
+```
