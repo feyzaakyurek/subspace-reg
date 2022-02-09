@@ -2,7 +2,7 @@
 
 This repo contains the source code for the following paper:  
 
-**"Subspace Regularizers for Few-Shot Class Incremental Learning"** [Paper]( for Few-Shot Class Incremental Learning)
+[**"Subspace Regularizers for Few-Shot Class Incremental Learning"**](https://arxiv.org/abs/2110.07059), Afra Feyza Akyürek, Ekin Akyürek, Derry Wijaya, Jacob Andreas. ICLR 2022.
 
 
 ## Installation
@@ -17,11 +17,17 @@ conda env create -f environment.yml
 and activate it.
 
 ## Download Data and Pretrained Models
+
+### Multi Session
+
 If running `multi-session` please download data from this [link](https://drive.google.com/file/d/14aOw3G3uOaaq7jPswLsDE080K0K-tkwJ/view?usp=sharing), uncompress the contents under `data/miniImageNet` and place `data` under this repo. You should have two files under `data/miniImageNet`: `all.pickle` and `class_names.txt`.
 
+Download pretrained models for `multi-session` from [here](https://drive.google.com/file/d/1VzjnZcjgwlQe7CK-Sl730In-WNPvom0b/view?usp=sharing) and place them under `dumped/backbones/continual/resnet18`. The numbered folder names refer to the seeds. Eventually you will have `dumped/backbones/continual/resnet18/1`, `dumped/backbones/continual/resnet18/2`, etc.
+
+### Single Session
 If running `single-session`, download data from [here](https://github.com/renmengye/inc-few-shot-attractor-public) and place it under `data/[DATASETNAME]` replacing DATASETNAME with miniImageNet or tieredImageNet.
 
-Download pretrained models for `multi-session` from [here](https://drive.google.com/file/d/1VzjnZcjgwlQe7CK-Sl730In-WNPvom0b/view?usp=sharing) and place them under `dumped/backbones/continual/resnet18`. The numbered folder names refer to the seeds. Eventually you will have `dumped/backbones/continual/resnet18/1`, `dumped/backbones/continual/resnet18/2`, etc.
+Download pretrained model TBD.
 
 ## Running
 
@@ -35,7 +41,7 @@ Feel free to reach out to with questions.
 Afra Feyza Akyürek (akyurek@bu.edu)  
 Ekin Akyürek (akyurek@mit.edu)
 
-## Acknowlegements
+## Acknowledgment
 A significant portion of this repository is based on [RFS source code](https://github.com/WangYueFt/rfs).
 
 ```
