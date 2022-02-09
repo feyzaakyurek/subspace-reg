@@ -1,37 +1,13 @@
+# This script is largely based on https://github.com/WangYueFt/rfs
+
 import torch.nn as nn
 import torch
 import torch.nn.functional as F
 from torch.distributions import Bernoulli
-import math
-import numpy as np
 import os
 import pickle
-import ipdb
-
 from models.util import get_embeds
 
-class Pusher:
-    def __init__(self, opt, base_weight):
-        self.base_weight = base_weight # numbase X cdim
-        self.cos = nn.CosineSimilarity(dim=1, eps=1e-6)
-        
-    def loss1(self, push_away, novel_weight):
-        
-        # Find a row in base_weight that is closest to each of novel_weight
-        num_base = self.base_weight.size(0)
-        num_novel = novel_weight.size(0)
-        base_device = self.base_weight.device
-                
-        mask = torch.zeros((num_novel,num_base)).to(base_device)
-        for i,novel in enumerate(novel_weight):
-            similarity = self.cos(novel.repeat(num_base, 1), 
-                                  self.base_weight)    
-            closest = torch.argmax(similarity) # size num novel classes
-            mask[i,closest] = 1.0
-
-        selected = mask @ self.base_weight # numnovel x cdim
-        reg = -push_away * torch.norm(selected - novel_weight)
-        return reg
 
 class LinearMap(nn.Module):
     def __init__(self, indim, outdim):
@@ -73,7 +49,7 @@ class LangPuller(nn.Module):
         # This will be used to compute label attractors.
         self.softmax = nn.Softmax(dim=1)
         # If Glove, use the first 300 TODO
-        if opt.glove: #todo
+        if opt.glove:
             self.base_embeds = self.base_embeds[:,:300]
             self.novel_embeds = self.novel_embeds[:,:300]
             
@@ -85,7 +61,7 @@ class LangPuller(nn.Module):
         new_novel_embeds = get_embeds(embed_pth, vocab_novel).float().cuda()
         self.novel_embeds = new_novel_embeds
         if opt.glove: #todo
-            self.novel_embeds = self.novel_embeds[:,:300]
+            self.novel_embeds = self.novel_embeds[:,:300] # First 300 of the saved embeddings are Glove.
 #         self.novel_embeds = torch.cat((self.novel_embeds, new_novel_embeds), 0)
 
     def create_pulling_mapping(self, state_dict, base_weight_size=640):
@@ -95,30 +71,22 @@ class LangPuller(nn.Module):
         self.mapping_model.load_state_dict(state_dict)
         self.mapping_model = self.mapping_model.cuda()
         
-        
-#     def forward(self, base_weight, mask=False):
-#         scores = self.novel_embeds @ torch.transpose(self.base_embeds, 0, 1)
-#         if mask:
-#             scores.fill_diagonal_(-9999)
-#         scores = self.softmax(scores)
-#         return scores @ base_weight # 5 x 640 for fine-tuning.
+
     def forward(self, base_weight, mask=False):
         if self.mapping_model is None:
-            # Default way of computing pullers is thru label similarity.
+            # Default way of computing pullers is thru sem. sub. reg.:
             scores = self.novel_embeds @ torch.transpose(self.base_embeds, 0, 1)
             if mask:
                 scores.fill_diagonal_(-9999)
             scores = self.softmax(scores / self.temp)
             return scores @ base_weight # 5 x 640 for fine-tuning.
         else:
-            # A mapping model is provided input = novel labels
-            # output = pullers
+            # Linear Mapping:
             with torch.no_grad():
                 inspired = self.mapping_model(self.novel_embeds)
             return inspired
 
     def loss1(self, pull, inspired, weights):
-#         return torch.exp(pull) * self.mse(weights, inspired)
         return pull * torch.norm(inspired - weights)**2
 
     def get_projected_weight(self, pull, base_weight, weights):
@@ -128,152 +96,6 @@ class LangPuller(nn.Module):
         mutnorm = mut / torch.norm(base_weight, dim=1).unsqueeze(0)
         return mutnorm @ base_weight
         
-
-class LangLinearClassifier(nn.Module):
-    def __init__(self, vocab,  load_embeds, dim, description=False,
-                 cdim=640, bias=False, verbose=True, multip_fc=0.15,
-                 attention=None, transform_query_size=None):
-        super(LangLinearClassifier, self).__init__()
-        self.vocab = vocab
-        self.dim = dim
-        self.attention = attention
-        self.transform_query_size = transform_query_size
-        self.multip_fc = nn.Parameter(torch.FloatTensor([multip_fc]), requires_grad=False)
-        self.dropout = nn.Dropout(0.5)
-        bound = 1 / math.sqrt(cdim)
-        assert os.path.exists(load_embeds)
-        self.ce = nn.CrossEntropyLoss()
-        if description:
-            words = vocab
-        else:
-            words = []
-            for token in vocab:
-                words = words + token.split(' ')
-
-        # Load the embed dict pickle
-        if verbose:
-            print(f"Reading embeddings from {load_embeds}...")
-        with open(load_embeds, 'rb') as f:
-            pretrained_embedding = pickle.load(f)
-
-        for w in words:
-            if w not in pretrained_embedding: print("not found: "+ w)
-
-        if description:
-            embeds = []
-            for token in vocab:
-                embeds.append(pretrained_embedding[token].unsqueeze(0))
-            embed_tensor = torch.cat(embeds, 0)
-            dim = embed_tensor.size()[1]
-        else:
-            embed_tensor = torch.Tensor(len(vocab), dim)
-            nn.init.uniform_(embed_tensor, -bound, bound)
-            for (i,token) in enumerate(vocab):
-                words = token.split(' ')
-                current = None
-                for w in words:
-                    try:
-                        if current is None:
-                            current = torch.from_numpy(pretrained_embedding[w])
-                        else:
-                            current += torch.from_numpy(pretrained_embedding[w])
-                    except KeyError:
-                        continue
-                if current is not None:
-                    embed_tensor[i] = current / len(words)
-
-        self.embed = nn.Parameter(embed_tensor * multip_fc, requires_grad=False)
-
-        if self.attention is not None:
-            num_classes = embed_tensor.size()[0]
-            self.softmax = nn.Softmax(dim=1)
-            if self.transform_query_size is not None:
-                assert self.attention == "concat"
-                trs_size = self.transform_query_size
-                self.transform_W_query = nn.Parameter(torch.Tensor(cdim,trs_size), requires_grad=True)
-                self.transform_W_key = nn.Parameter(torch.Tensor(dim,trs_size), requires_grad=True)
-                self.transform_W_value = nn.Parameter(torch.Tensor(dim,trs_size), requires_grad=True)
-                self.transform_W_output = nn.Parameter(torch.Tensor(num_classes,cdim+trs_size), requires_grad=True)
-                nn.init.kaiming_uniform_(self.transform_W_query, a=math.sqrt(5))
-            else:
-                self.transform_W_key = nn.Parameter(torch.Tensor(dim,cdim), requires_grad=True)
-                self.transform_W_value = nn.Parameter(torch.Tensor(dim,cdim), requires_grad=True)
-                sz = 2 if attention == "concat" else 1
-                self.transform_W_output = nn.Parameter(torch.Tensor(num_classes,sz*cdim), requires_grad=True)
-
-            nn.init.kaiming_uniform_(self.transform_W_key, a=math.sqrt(5))
-            nn.init.kaiming_uniform_(self.transform_W_value, a=math.sqrt(5))
-            nn.init.kaiming_uniform_(self.transform_W_output, a=math.sqrt(5))
-
-        else:
-
-            self.transform_W = nn.Parameter(torch.Tensor(dim,cdim), requires_grad=True)
-            nn.init.kaiming_uniform_(self.transform_W, a=math.sqrt(5))
-
-            self.transform_B = nn.Parameter(torch.Tensor(len(vocab),cdim), requires_grad=True)
-            nn.init.kaiming_uniform_(self.transform_B, a=math.sqrt(5))
-
-        if bias:
-            self.bias = nn.Parameter(torch.Tensor(len(vocab)), requires_grad=True)
-            nn.init.uniform_(self.bias, -bound, bound)
-        else:
-            self.register_parameter('bias', None)
-
-    @property
-    def weight(self):
-        if self.attention is not None:
-            return self.transform_W_output #TODO
-        else:
-            return self.embed @ self.transform_W
-
-    def augment_classifier_(self, novel_labels, embed_path):
-        base_device = self.embed.device
-        novel_embeds = get_embeds(embed_path, novel_labels).to(base_device)
-        self.embed = nn.Parameter(torch.cat([self.embed, novel_embeds], 0),
-                                  requires_grad=False)
-
-        if self.attention is not None:
-            novel_classifier = nn.Linear(self.transform_W_output.size(1),
-                                         len(novel_labels),
-                                         bias=(self.bias is not None)) # TODO!!
-
-            novel_weight = novel_classifier.weight.detach()
-            augmented_weight = torch.cat([self.transform_W_output.detach(),
-                                          novel_weight.to(base_device)], 0)
-            self.transform_W_output = nn.Parameter(augmented_weight, requires_grad=True)
-
-            if self.bias is not None:
-                novel_bias = novel_classifier.bias.detach()
-                self.bias = torch.cat([self.bias.detach(),
-                                       novel_bias.to(base_device)], 0)
-
-
-
-    def forward(self, x, get_alphas=False):
-        if self.attention is not None:
-            if self.transform_query_size is not None:
-                q = x @ self.transform_W_query
-                logits = q @ torch.transpose((self.embed @ self.transform_W_key),0,1) # Bxnum_classes key values
-                c = self.softmax(logits) @ (self.embed @ self.transform_W_value)  # B x cdim context vector (or transform_query_size if provided)
-            else:
-                logits = x @ torch.transpose((self.embed @ self.transform_W_key),0,1) # Bxnum_classes key values
-                c = self.softmax(logits) @ (self.embed @ self.transform_W_value)  # B x cdim context vector (or transform_query_size if provided)
-
-            if self.attention == "sum":
-                x = self.dropout(x) + c
-            elif self.attention == "concat":
-                x = torch.cat((self.dropout(x),c),1)
-            else: # context only
-                x = c
-            if get_alphas:
-                return F.linear(x, self.weight, self.bias), logits
-
-        else:
-            raise NotImplementedError()
-
-        return F.linear(x, self.weight, self.bias)
-
-
 
 
 class ResNet(nn.Module):
@@ -315,39 +137,7 @@ class ResNet(nn.Module):
 
         self.num_classes = num_classes
         if self.num_classes > 0:
-            #self.classifier = nn.Linear(640, self.num_classes)
-            if vocab is None:
-                self.classifier = nn.Linear(640, self.num_classes, bias=opt.linear_bias)
-            else:
-                if opt.classifier == "lang-linear":
-                    embed_pth = os.path.join(opt.word_embed_path,
-                                             "{0}_dim{1}{2}.pickle".format(opt.dataset,
-                                                                        opt.word_embed_size,
-                                                                        opt.word_embed_type,
-                                                                        ))
-                    self.classifier = LangLinearClassifier(vocab,
-                                                           embed_pth,
-                                                           cdim=640,
-                                                           dim=opt.word_embed_size,
-                                                           bias=opt.lang_classifier_bias,
-                                                           multip_fc=opt.multip_fc,
-                                                           attention=opt.attention,
-                                                           transform_query_size=opt.transform_query_size)
-                else: # description classifier?
-                    embed_pth = os.path.join(opt.description_embed_path,
-                             "{0}_{1}_layer{2}_prefix_{3}.pickle".format(opt.dataset,
-                                                             opt.desc_embed_model,
-                                                             opt.transformer_layer,
-                                                             opt.prefix_label))
-                    self.classifier = LangLinearClassifier(vocab,
-                                                           embed_pth,
-                                                           cdim=640,
-                                                           dim=None,
-                                                           bias=opt.lang_classifier_bias,
-                                                           description=True,
-                                                           multip_fc=opt.multip_fc,
-                                                           attention=opt.attention,
-                                                           transform_query_size=opt.transform_query_size)
+            self.classifier = nn.Linear(640, self.num_classes, bias=opt.linear_bias)
 
     def _make_layer(self, block, n_block, planes, stride=1, drop_rate=0.0, drop_block=False, block_size=1):
         downsample = None
@@ -436,11 +226,8 @@ class ResNet(nn.Module):
             self.classifier.bias = nn.Parameter(augmented_bias, requires_grad=True)
 
 
-
-
     def regloss(self, lmbd, base_weight, base_bias=None):
-#         return torch.exp(pull) * self.mse(weights, inspired)
-        reg = lmbd * torch.norm(self.classifier.weight[:base_weight.size(0),:] - base_weight) #**2??
+        reg = lmbd * torch.norm(self.classifier.weight[:base_weight.size(0),:] - base_weight)
         if base_bias is not None:
             reg += lmbd * torch.norm(self.classifier.bias[:base_weight.size(0)] - base_bias)**2
         return reg
@@ -585,6 +372,32 @@ class SELayer(nn.Module):
         y = self.avg_pool(x).view(b, c)
         y = self.fc(y).view(b, c, 1, 1)
         return x * y
+
+
+
+    def forward(self, x, get_alphas=False):
+        if self.attention is not None:
+            if self.transform_query_size is not None:
+                q = x @ self.transform_W_query
+                logits = q @ torch.transpose((self.embed @ self.transform_W_key),0,1) # Bxnum_classes key values
+                c = self.softmax(logits) @ (self.embed @ self.transform_W_value)  # B x cdim context vector (or transform_query_size if provided)
+            else:
+                logits = x @ torch.transpose((self.embed @ self.transform_W_key),0,1) # Bxnum_classes key values
+                c = self.softmax(logits) @ (self.embed @ self.transform_W_value)  # B x cdim context vector (or transform_query_size if provided)
+
+            if self.attention == "sum":
+                x = self.dropout(x) + c
+            elif self.attention == "concat":
+                x = torch.cat((self.dropout(x),c),1)
+            else: # context only
+                x = c
+            if get_alphas:
+                return F.linear(x, self.weight, self.bias), logits
+
+        else:
+            raise NotImplementedError()
+
+        return F.linear(x, self.weight, self.bias)
 
 def conv3x3(in_planes, out_planes, stride=1):
     """3x3 convolution with padding"""
