@@ -1,14 +1,13 @@
+# This script is largely based on https://github.com/WangYueFt/rfs
+
 import os
-import sys
 import pickle
 from PIL import Image
 import numpy as np
 import torch
 from torch.utils.data import Dataset
 import torchvision.transforms as transforms
-import warnings
 import re
-import ipdb
 
 # torch.multiprocessing.set_sharing_strategy('file_system')
 class ImageNet(Dataset):
