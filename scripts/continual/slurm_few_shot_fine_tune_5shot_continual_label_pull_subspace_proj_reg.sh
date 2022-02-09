@@ -51,8 +51,7 @@ if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then
                            --set_seed $SEED \
                            --attraction_override "distance2subspace" \
                            --n_base_support_samples 1 \
-                           --memory_replay 1 \
-                           --save_preds_0 > $LOG_STDOUT 2> $LOG_STDERR
+                           --memory_replay 1 > $LOG_STDOUT 2> $LOG_STDERR
 fi
 done
 done

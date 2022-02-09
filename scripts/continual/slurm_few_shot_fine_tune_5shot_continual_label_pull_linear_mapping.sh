@@ -53,8 +53,7 @@ if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then
                            --glove \
                            --attraction_override "mapping_linear_label2image" \
                            --n_base_support_samples 1 \
-                           --memory_replay 1 \
-                           --save_preds_0 > $LOG_STDOUT 2> $LOG_STDERR
+                           --memory_replay 1 > $LOG_STDOUT 2> $LOG_STDERR
 fi
 done
 done

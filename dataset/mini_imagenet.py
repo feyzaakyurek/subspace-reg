@@ -210,7 +210,7 @@ class MetaImageNet(ImageNet):
         if self.split != "train":
             assert self.phase is None
 
-        if self.use_episodes:
+        if self.use_episodes: # this is to match the exact examples used in XtarNet.
             
             self.episode_support_ids = []
             self.episode_query_ids = []
