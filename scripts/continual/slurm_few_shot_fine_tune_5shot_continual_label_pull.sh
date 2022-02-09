@@ -8,12 +8,13 @@
 #SBATCH --array=1-10
 #SBATCH --output=dumped/%A_%a.out
 #SBATCH --error=dumped/%A_%a.err
-#SBATCH --job-name=cont5labelmem
+#SBATCH --job-name=cont5semsubmem
 
 
-DUMPED_PATH="/home/gridsan/akyurek/git/rfs-incremental/dumped"
-EXP_FOLDER=$DUMPED_PATH/"continual"/"finetune_label_pull_memory_base+novel_converge"
-DATA_PATH="/home/gridsan/akyurek/git/rfs-incremental/data"
+CURRENT="$PWD"
+DUMPED_PATH="$CURRENT/dumped"
+EXP_FOLDER=$DUMPED_PATH/"continual/finetune_semantic_subspace_memory_base+novel_converge"
+DATA_PATH="$CURRENT/data"
 mkdir -p $EXP_FOLDER
 
 cnt=0
@@ -55,8 +56,7 @@ if [[ $cnt -eq $SLURM_ARRAY_TASK_ID ]]; then
                            --temperature $TEMP \
                            --weight_decay $WD \
                            --n_base_support_samples 1 \
-                           --memory_replay 1 \
-                           --save_preds_0 > $LOG_STDOUT 2> $LOG_STDERR
+                           --memory_replay 1 > $LOG_STDOUT 2> $LOG_STDERR
 fi
 done
 done
@@ -66,8 +66,11 @@ done
 done
 done
 done
-# # For debugging.
-# No language fine tuning few-shot
+
+
+# For a single run comment out above nested for loop, leaving variable definitions,
+# and use below.
+
 # BACKBONE_PATH="${DUMPED_PATH}/backbones/continual/resnet18/2/resnet18_last.pth"
 # python eval_incremental.py --model_path $BACKBONE_PATH \
 #                        --model resnet18 \
@@ -91,11 +94,7 @@ done
 #                        --glove \
 #                        --temperature 3.0 \
 #                        --weight_decay 5e-4 \
-#                        --save_preds_0
+#                        --memory_replay 1 \
+#                        --n_base_support_samples 1
 
 
-
-# Checklist to run an array job.
-# 1. Make sure total number of experiments matches the array param in sbatch.
-# 2. Make sure the order that params are written to file matches the reassignment.
-# 3.

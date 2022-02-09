@@ -119,7 +119,7 @@ def main():
         start = time.time()
         opt.split = "val"
         original_nepisodes = opt.neval_episodes
-        opt.neval_episodes = 300 # If multi-session, this is overridden later.
+        opt.neval_episodes = 8 # If multi-session, this is overridden later.
         novel, base = few_shot_finetune_incremental_test(model,
                                                          ckpt,
                                                          criterion,

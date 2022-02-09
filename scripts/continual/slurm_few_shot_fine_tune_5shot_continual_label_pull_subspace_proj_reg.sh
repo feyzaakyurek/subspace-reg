@@ -10,12 +10,10 @@
 #SBATCH --error=dumped/%A_%a.err
 #SBATCH --job-name=cont5submem
 
-
-DUMPED_PATH="/home/gridsan/akyurek/git/rfs-incremental/dumped"
+CURRENT="$PWD"
+DUMPED_PATH="$CURRENT/dumped"
 EXP_FOLDER=$DUMPED_PATH/"continual/finetune_subspace_memory_base+novel_converge"
-DATA_PATH="/home/gridsan/akyurek/git/rfs-incremental/data"
-
-
+DATA_PATH="$CURRENT/data"
 mkdir -p $EXP_FOLDER
 
 cnt=0
@@ -63,10 +61,9 @@ done
 done
 done
 
-# For debugging.
+# For a single run comment out above nested for loop, leaving variable definitions,
+# and use below.
 
-
-# No language fine tuning few-shot
 # BACKBONE_PATH="${DUMPED_PATH}/backbones/continual/resnet18/2/resnet18_last.pth"
 # python eval_incremental.py --model_path $BACKBONE_PATH \
 #                            --model resnet18 \
@@ -91,9 +88,3 @@ done
 #                            --memory_replay 1 \
 #                            --n_base_support_samples 1
 
-
-
-# Checklist to run an array job.
-# 1. Make sure total number of experiments matches the array param in sbatch.
-# 2. Make sure the order that params are written to file matches the reassignment.
-# 3.
