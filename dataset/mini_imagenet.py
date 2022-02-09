@@ -65,22 +65,10 @@ class ImageNet(Dataset):
             self.labels = data['labels']
             self.cat2label = data['catname2label']
 
-#         if args.continual and self.split == "val":
-#             file_pattern = 'miniImageNet_category_split_{}.pickle'.format("test")
-
-#             with open(os.path.join(args.data_root, file_pattern), 'rb') as f:
-#                 data = pickle.load(f, encoding='latin1')
-#                 second_imgs = data['data']
-#                 second_labels = data['labels']
-                
-#                 self.imgs = np.concatenate((self.imgs, second_imgs), axis=0)
-#                 self.labels = np.concatenate((self.labels, second_labels), axis=0)
-#                 self.cat2label.update(data['catname2label'])
-
         # If continual, we read the whole data.
         # Based on the seed and split read the classes. 
         # Filter accordingly.
-        if args.continual:
+        if args.continual: # Multi-session.
             all_classes = np.arange(100)
             np.random.shuffle(all_classes) # Shuffles in place.
             basec = np.sort(all_classes[:60])
@@ -89,7 +77,6 @@ class ImageNet(Dataset):
             self.basec_map = dict(zip(basec, np.arange(len(basec))))
             
             valc = all_classes[60:]
-#             testc = all_classes[76:]
             
             if split == "train":
                 base_samples = [i for i, e in enumerate(data['labels']) if e in basec]
@@ -149,11 +136,6 @@ class ImageNet(Dataset):
                     label = self.cat2label[catname]
                     self.label2human[label]= humanname
         
-        
-#         save_l2h = os.path.join(args.model_path, "label2human.pickle")
-#         with open(save_l2h, "wb") as f:
-#             pickle.dump(dict((k, self.label2human[k]) for k in basec), f)
-#         sys.exit()
         
         self.global_labels = self.labels
 
