@@ -12,8 +12,9 @@
 
 
 
-DUMPED_PATH="/home/gridsan/akyurek/git/rfs-incremental/dumped"
-DATA_PATH="/home/gridsan/akyurek/git/rfs-incremental/data"
+CURRENT="$PWD"
+DUMPED_PATH="$CURRENT/dumped"
+DATA_PATH="$CURRENT/data"
 BACKBONE_FOLDER=${DUMPED_PATH}/backbones/continual/resnet18
 mkdir -p $BACKBONE_FOLDER
 
@@ -41,7 +42,9 @@ fi
 done
 
 
-# Debug
+# If running for a single seed use below (comment out above
+# keeping the variable definitions such as BACKBONE_FOLDER):
+
 # python train_supervised.py --trial pretrain \
 #                                --tb_path tb \
 #                                --data_root $DATA_PATH \

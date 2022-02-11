@@ -31,9 +31,16 @@ Download pretrained model TBD.
 
 ## Running
 
-Sample scripts are under `scripts/continual` for `multi-session` along with the scripts for `single-session`. In every script you will see a nested for loop which we used for hyperparameter tuning. Each experiment is run for 10 different seeds. If you are interested in only a single run, scroll down to the bottom for the respective command in every `.sh` file. 
+### Using provided pretrained models
+
+Sample scripts are under `scripts/continual` for `multi-session`. In every script you will see a nested for loop which we used for hyperparameter tuning while current values indicate the best parameters. Each experiment is run for 10 different seeds. If you are interested in only a single run, scroll down to the bottom for the respective command in every `.sh` file. 
 
 The existing commands use memory (+M setup in the paper). In order to turn off memory replay, simply remove the options `--n_base_support_samples 1` and `--memory_replay 1` which will set them to zero. Make sure to edit your `EXP_FOLDER` in the scripts to avoid overriding your previous experiments.
+
+### Training the backbone from scratch
+
+Please refer to `scripts/continual/slurm_run_backbone.sh`. After training your backbones, please refer to the above section `Using pretrained models`, making sure you provide your trained backbone in respective scripts.
+
 
 ## Contacts
 Feel free to reach out to with questions.
