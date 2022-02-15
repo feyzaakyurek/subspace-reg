@@ -1,42 +1,54 @@
-# RFS
+# Subspace Regularizers
 
-Representations for Few-Shot Learning (RFS). This repo covers the implementation of the following paper:  
+This repo contains the source code for the following paper:  
 
-**"Rethinking few-shot image classification: a good embedding is all you need?"** [Paper](https://arxiv.org/abs/2003.11539),  [Project Page](https://people.csail.mit.edu/yuewang/projects/rfs/) 
+[**Subspace Regularizers for Few-Shot Class Incremental Learning**](https://arxiv.org/abs/2110.07059), Afra Feyza Akyürek, Ekin Akyürek, Derry Wijaya, Jacob Andreas. ICLR 2022.
 
-If you find this repo useful for your research, please consider citing the paper  
-```
-@article{tian2020rethink,
-  title={Rethinking few-shot image classification: a good embedding is all you need?},
-  author={Tian, Yonglong and Wang, Yue and Krishnan, Dilip and Tenenbaum, Joshua B and Isola, Phillip},
-  journal={arXiv preprint arXiv:2003.11539},
-  year={2020}
-}
-```
 
 ## Installation
 
-This repo was tested with Ubuntu 16.04.5 LTS, Python 3.5, PyTorch 0.4.0, and CUDA 9.0. However, it should be compatible with recent PyTorch versions >=0.4.0
+Please consider using `sh setup.sh` to create a conda environment and install required packages.
 
-## Download Data
-The data we used here is preprocessed by the repo of [MetaOptNet](https://github.com/kjunelee/MetaOptNet), but we have
-renamed the file. Our version of data can be downloaded from here:
+## Download Data and Pretrained Models
 
-[[DropBox]](https://www.dropbox.com/sh/6yd1ygtyc3yd981/AABVeEqzC08YQv4UZk7lNHvya?dl=0)
+### Multi Session
+
+If running `multi-session` create and navigate to `data/miniImageNet` in this repo. Please download the file subspace-mini-data.tar.gz from this [link](https://drive.google.com/drive/folders/1pDNqrEDq6H03-dLLLYyDS9FsKDQh24Ug?usp=sharing), uncompress the contents under `data/miniImageNet`. You should have two files under `data/miniImageNet`: `all.pickle` and `class_names.txt`. You may consider using the command line utility [gdrive](https://github.com/prasmussen/gdrive) for downloading files from Google Drive. [This guide](https://medium.com/geekculture/how-to-upload-file-to-google-drive-from-linux-command-line-69668fbe4937) is also helpful for setting up gdrive. If using gdrive, you will need the `fileId`s, and they are usually visible in the shareable links.
+
+Create a folder named `dumped` and cd into it. Download pretrained models for `multi-session` from the same link above (multi-session-resnet18.tar.gz), extract and place the contents under `dumped/backbones/continual/resnet18`. The numbered folder names refer to the seeds. Eventually you will have `dumped/backbones/continual/resnet18/1`, `dumped/backbones/continual/resnet18/2`, etc.
+
+For single-session experiments please checkout the branch `singlesession`.
 
 ## Running
 
-Exemplar commands for running the code can be found in `scripts/run.sh`.
+### Using provided pretrained models
 
-For unuspervised learning methods `CMC` and `MoCo`, please refer to the [CMC](http://github.com/HobbitLong/CMC) repo.
+Sample scripts are under `scripts/continual` for `multi-session`. In every script, at the beginning we provide slurm options for batch jobs. Feel free to ignore this part if you're not using Slurm. you will see a nested for loop which we used for hyperparameter tuning while current values indicate the best parameters. Each experiment is run for 10 different seeds. If you are interested in only a single run, scroll down to the bottom for the respective command in every `.sh` file. Make sure to set the desired seed between 1-10.
+
+The existing commands use memory (+M setup in the paper). In order to turn off memory replay, simply remove the options `--n_base_support_samples 1` and `--memory_replay 1` which will set them to zero. When switching between +/-M, make sure to edit your `EXP_FOLDER` parameter in the sh scripts to avoid overriding your previous experiments.
+
+### Training the backbone from scratch
+
+If you would like to train the backbones from scratch, you may use `scripts/continual/slurm_run_backbone.sh`. After training your backbones, please refer to the above section `Using pretrained models`, making sure you point to your trained backbones in respective scripts.
+
+## Compute
+
+All experiments were run on 32GB NVIDIA Tesla V100 nodes, however memory requirement is likely lesser.
 
 ## Contacts
-For any questions, please contact:
+Feel free to reach out to with questions, or open issues.
 
-Yonglong Tian (yonglong@mit.edu)  
-Yue Wang (yuewang@csail.mit.edu)
+Afra Feyza Akyürek (akyurek@bu.edu)  
+Ekin Akyürek (akyurek@mit.edu)
 
-## Acknowlegements
-Part of the code for distillation is from [RepDistiller](http://github.com/HobbitLong/RepDistiller) repo.
+## Acknowledgment
+A significant portion of this repository is based on [RFS source code](https://github.com/WangYueFt/rfs).
 
-
+```
+@inproceedings{akyurek2022subspace,
+  title={Subspace Regularizers for Few-Shot Class Incremental Learning},
+  author={Aky{\"u}rek, Afra Feyza and Aky{\"u}rek, Ekin and Wijaya, Derry and Andreas, Jacob},
+  booktitle={International Conference on Learning Representations},
+  year={2022}
+}
+```
