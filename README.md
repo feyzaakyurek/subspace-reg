@@ -7,22 +7,15 @@ This repo contains the source code for the following paper:
 
 ## Installation
 
-Setup the conda environment using `environment.yml`.
-
-```
-git clone https://github.com/feyzaakyurek/subspace-reg.git
-cd subspace-reg
-conda env create -f environment.yml
-```
-and activate it.
+Please consider using `sh setup.sh` to create a conda environment and install required packages.
 
 ## Download Data and Pretrained Models
 
 ### Multi Session
 
-If running `multi-session` please download data from this [link](https://drive.google.com/file/d/14aOw3G3uOaaq7jPswLsDE080K0K-tkwJ/view?usp=sharing), uncompress the contents under `data/miniImageNet` and place `data` under this repo. You should have two files under `data/miniImageNet`: `all.pickle` and `class_names.txt`.
+If running `multi-session` create and navigate to `data/miniImageNet` in this repo. Please download the file subspace-mini-data.tar.gz from this [link](https://drive.google.com/drive/folders/1pDNqrEDq6H03-dLLLYyDS9FsKDQh24Ug?usp=sharing), uncompress the contents under `data/miniImageNet`. You should have two files under `data/miniImageNet`: `all.pickle` and `class_names.txt`. You may consider using the command line utility [gdrive](https://github.com/prasmussen/gdrive) for downloading files from Google Drive. [This guide](https://medium.com/geekculture/how-to-upload-file-to-google-drive-from-linux-command-line-69668fbe4937) is also helpful for setting up gdrive. If using gdrive, you will need the `fileId`s, and they are usually visible in the shareable links.
 
-Download pretrained models for `multi-session` from [here](https://drive.google.com/file/d/1VzjnZcjgwlQe7CK-Sl730In-WNPvom0b/view?usp=sharing) and place them under `dumped/backbones/continual/resnet18`. The numbered folder names refer to the seeds. Eventually you will have `dumped/backbones/continual/resnet18/1`, `dumped/backbones/continual/resnet18/2`, etc.
+Create a folder named `dumped` and cd into it. Download pretrained models for `multi-session` from the same link above (multi-session-resnet18.tar.gz), extract and place the contents under `dumped/backbones/continual/resnet18`. The numbered folder names refer to the seeds. Eventually you will have `dumped/backbones/continual/resnet18/1`, `dumped/backbones/continual/resnet18/2`, etc.
 
 For single-session experiments please checkout the branch `singlesession`.
 
@@ -30,13 +23,13 @@ For single-session experiments please checkout the branch `singlesession`.
 
 ### Using provided pretrained models
 
-Sample scripts are under `scripts/continual` for `multi-session`. In every script, at the beginning we provide slurm options for batch jobs. Feel free to ignore this part if you're not using Slurm. you will see a nested for loop which we used for hyperparameter tuning while current values indicate the best parameters. Each experiment is run for 10 different seeds. If you are interested in only a single run, scroll down to the bottom for the respective command in every `.sh` file. 
+Sample scripts are under `scripts/continual` for `multi-session`. In every script, at the beginning we provide slurm options for batch jobs. Feel free to ignore this part if you're not using Slurm. you will see a nested for loop which we used for hyperparameter tuning while current values indicate the best parameters. Each experiment is run for 10 different seeds. If you are interested in only a single run, scroll down to the bottom for the respective command in every `.sh` file. Make sure to set the desired seed between 1-10.
 
-The existing commands use memory (+M setup in the paper). In order to turn off memory replay, simply remove the options `--n_base_support_samples 1` and `--memory_replay 1` which will set them to zero. Make sure to edit your `EXP_FOLDER` in the scripts to avoid overriding your previous experiments.
+The existing commands use memory (+M setup in the paper). In order to turn off memory replay, simply remove the options `--n_base_support_samples 1` and `--memory_replay 1` which will set them to zero. When switching between +/-M, make sure to edit your `EXP_FOLDER` parameter in the sh scripts to avoid overriding your previous experiments.
 
 ### Training the backbone from scratch
 
-Please refer to `scripts/continual/slurm_run_backbone.sh`. After training your backbones, please refer to the above section `Using pretrained models`, making sure you provide your trained backbone in respective scripts.
+If you would like to train the backbones from scratch, you may use `scripts/continual/slurm_run_backbone.sh`. After training your backbones, please refer to the above section `Using pretrained models`, making sure you point to your trained backbones in respective scripts.
 
 ## Compute
 
@@ -52,10 +45,10 @@ Ekin Akyürek (akyurek@mit.edu)
 A significant portion of this repository is based on [RFS source code](https://github.com/WangYueFt/rfs).
 
 ```
-@article{akyurek2021subspace,
+@inproceedings{akyurek2022subspace,
   title={Subspace Regularizers for Few-Shot Class Incremental Learning},
   author={Aky{\"u}rek, Afra Feyza and Aky{\"u}rek, Ekin and Wijaya, Derry and Andreas, Jacob},
-  journal={arXiv preprint arXiv:2110.07059},
-  year={2021}
+  booktitle={International Conference on Learning Representations},
+  year={2022}
 }
 ```
