@@ -143,7 +143,7 @@ def few_shot_finetune_incremental_test(net,
 
     # Iterate over sessions.
     for idx in range(iter_num):
-        print("\n**** Iteration {}/{} ****\n".format(idx, opt.neval_episodes))
+        print("\n**** Iteration {}/{} ****\n".format(idx+1, opt.neval_episodes))
         d_idx = drop_a_dim(next(meta_valloader_it))
         support_xs, support_ys, query_xs, query_ys = d_idx
         if base_support_loader is not None:
@@ -174,7 +174,7 @@ def few_shot_finetune_incremental_test(net,
             novel_bias_to_reserve = None
             if base_bias is not None:
                 novel_bias_to_reserve = net.classifier.bias.clone().detach()[-opt.n_ways:].requires_grad_(False)
-            print(f"Novel weight to reserve is of shape {novel_weight_to_reserve.shape} at session {idx}.")
+            print(f"Novel weight to reserve is of shape {novel_weight_to_reserve.shape} at session {idx+1}.")
         if idx > 1:
             new_novel_set = net.classifier.weight.clone().detach()[-opt.n_ways:,:].requires_grad_(False)
             novel_weight_to_reserve = torch.cat((novel_weight_to_reserve, new_novel_set), 0)
@@ -182,7 +182,7 @@ def few_shot_finetune_incremental_test(net,
                 new_novel_set_bias = net.classifier.bias.clone().detach()[-opt.n_ways:].requires_grad_(False)
                 novel_bias_to_reserve = torch.cat((novel_bias_to_reserve, new_novel_set_bias), 0)
 
-            print(f"Novel weight to reserve is of shape {novel_weight_to_reserve.shape} at session {idx}.")
+            print(f"Novel weight to reserve is of shape {novel_weight_to_reserve.shape} at session {idx+1}.")
 
 
         # Get sorted numeric labels
@@ -260,8 +260,8 @@ def few_shot_finetune_incremental_test(net,
             # Penalize the change in base classifier weights.
             if opt.lmbd_reg_transform_w is not None:
                 lmbd_reg = net.regloss(opt.lmbd_reg_transform_w, base_weight, base_bias)
-                if epoch % 10 == 0:
-                    print("LMBD: ", lmbd_reg.item())
+                # if epoch % 10 == 0:
+                #     print("LMBD: ", lmbd_reg.item())
                 loss += lmbd_reg
 
             # Penalize the change in previous novel classifier weights.
@@ -269,8 +269,8 @@ def few_shot_finetune_incremental_test(net,
                 lmbd_reg2 = net.reglossnovel(opt.lmbd_reg_novel,
                                              novel_weight_to_reserve,
                                              novel_bias_to_reserve)
-                if epoch % 10 == 0:
-                    print("LMBDN: ", lmbd_reg.item())
+                # if epoch % 10 == 0:
+                #     print("LMBDN: ", lmbd_reg.item())
                 loss += lmbd_reg2
 
             # Subspace regularizer loss
@@ -309,9 +309,8 @@ def few_shot_finetune_incremental_test(net,
                 acc1, acc5 = accuracy(output, support_ys_id, topk=(1,5))
                 train_loss = loss.item()
                 if epoch % 10 == 0:
-                    print('=======Novel Epoch {}=======\n'
-                          'Train\t'
-                          'Loss {:10.4f}\t'
+                    print('Novel Epoch {:4d}\t'
+                          'Train Loss {:10.4f}\t'
                           'Acc@1 {:10.3f}\t'
                           'Acc@5 {:10.3f}'.format(
                            epoch, train_loss, acc1[0], acc5[0]))

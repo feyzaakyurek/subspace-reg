@@ -1,7 +1,6 @@
 from __future__ import print_function
 import torch
 import pickle
-import ipdb
 import numpy as np
 
 def create_model(name, n_cls, opt, vocab=None, dataset='miniImageNet'):

@@ -274,7 +274,6 @@ class MetaImageNet(ImageNet):
             np.random.seed(args.set_seed)
             np.random.shuffle(self.classes)
             
-        print("Self.classes", self.classes)
 
     def __getitem__(self, item):
         if not self.use_episodes:

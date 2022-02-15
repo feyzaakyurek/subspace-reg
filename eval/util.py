@@ -65,7 +65,7 @@ def freeze_backbone_weights(backbone, opt, epoch, exclude=['classifier.transform
         for name, param in backbone.named_parameters():
             param.requires_grad = False
             if any(map(lambda s: name.startswith(s), exclude)): # why not; name in exclude:
-                print("Not frozen ", name)
+                print("Not frozen: ", name)
                 param.requires_grad = True
 
 def NN(support, support_ys, query):
@@ -125,7 +125,7 @@ def get_vocabs(base_loader=None, novel_loader=None, query_ys=None):
         vocab_novel = [label2human_novel[i] for i in novel_ids]
         orig2id = dict(zip(novel_ids, len(vocab_base) + np.arange(len(novel_ids))))
         vocab_all += vocab_novel
-    print("len(vocab): ", len(vocab_all))
+
     return vocab_base, vocab_all, vocab_novel, orig2id
 
 def drop_a_dim(data): #TODO why do we need this in the first place?
