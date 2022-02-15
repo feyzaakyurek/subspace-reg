@@ -111,30 +111,27 @@ def main():
         cudnn.benchmark = True
 
     # Evaluation
-    if opt.eval_mode == 'few-shot-incremental-fine-tune':
-        assert opt.classifier == "linear"
-        criterion = nn.CrossEntropyLoss()
+    assert opt.classifier == "linear"
+    criterion = nn.CrossEntropyLoss()
 
 
-        start = time.time()
-        opt.split = "val"
-        original_nepisodes = opt.neval_episodes
-        opt.neval_episodes = 8 # If multi-session, this is overridden later.
-        novel, base = few_shot_finetune_incremental_test(model,
-                                                         ckpt,
-                                                         criterion,
-                                                         meta_valloader,
-                                                         base_test_loader,
-                                                         opt,
-                                                         base_support_loader=base_support_loader)
-        val_time = time.time() - start
-        avg_score = (base+novel)/2
-        print('val_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel, 0, val_time))
-        print('val_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base, 0, val_time))
-        print('val_acc_average: {:.4f}'.format(avg_score))
+    start = time.time()
+    opt.split = "val"
+    original_nepisodes = opt.neval_episodes
+    opt.neval_episodes = 8 # If multi-session, this is overridden later.
+    novel, base = few_shot_finetune_incremental_test(model,
+                                                        ckpt,
+                                                        criterion,
+                                                        meta_valloader,
+                                                        base_test_loader,
+                                                        opt,
+                                                        base_support_loader=base_support_loader)
+    val_time = time.time() - start
+    avg_score = (base+novel)/2
+    print('val_acc_novel: {:.4f}, std: {:.4f}, time: {:.1f}'.format(novel, 0, val_time))
+    print('val_acc_base: {:.4f}, std: {:.4f}, time: {:.1f}'.format(base, 0, val_time))
+    print('val_acc_average: {:.4f}'.format(avg_score))
 
-    else:
-        raise NotImplementedError
 
 
 if __name__ == '__main__':
