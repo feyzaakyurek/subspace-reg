@@ -1,10 +1,10 @@
 from __future__ import print_function
-
-
-from . import model_dict
-
+import torch
+import pickle
+import numpy as np
 
 def create_model(name, n_cls, opt, vocab=None, dataset='miniImageNet'):
+    from . import model_dict
     """create model by name"""
     if dataset == 'miniImageNet' or dataset == 'tieredImageNet':
         if name.endswith('v2') or name.endswith('v3'):
@@ -46,3 +46,22 @@ def get_teacher_name(model_path):
         else:
             return segments[0] + '_' + segments[1] + '_' + segments[2]
         
+
+def get_embeds(embed_pth, vocab, dim=500):
+    '''
+    Takes in path to the embeds and vocab (list).
+    Returns a list of embeds.
+    '''
+    with open(embed_pth, "rb") as openfile:
+        embeds_ = pickle.load(openfile)
+    embeds = [0] * len(vocab)
+    for (i,token) in enumerate(vocab):
+        words = token.split(' ')
+        for w in words:
+            try:
+                embeds[i] += embeds_[w]
+            except KeyError:
+                embeds[i] = np.zeros(dim)
+        embeds[i] /= len(words)
+        
+    return torch.stack([torch.from_numpy(e) for e in embeds], 0)

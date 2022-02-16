@@ -34,7 +34,7 @@ If you would like to train the backbones from scratch, you may use `scripts/cont
 
 ## Compute
 
-All experiments were run on 32GB NVIDIA Tesla V100 nodes, however memory requirement is likely lesser.
+All experiments were run on 32GB NVIDIA Tesla V100 nodes, however memory requirement is likely less.
 
 ## Contacts
 Feel free to reach out to with questions, or open issues.

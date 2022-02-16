@@ -5,7 +5,6 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 import torchvision.transforms as transforms
-import ipdb
 
 class TieredImageNet(Dataset):
     def __init__(self, args, partition='train', pretrain=True, is_sample=False, k=4096,
