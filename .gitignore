@@ -4,7 +4,6 @@ output*/
 ckpts/
 *.pth
 *.t7
-*.png
 *.jpg
 tmp*.py
 # run*.sh
@@ -12,6 +11,12 @@ tmp*.py
 models_distilled/
 tensorboard/
 models_pretrained/
+notebooks/*
+csv_files/*
+dumped/*
+external/*
+notes
+src/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
