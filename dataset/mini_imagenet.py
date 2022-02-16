@@ -277,7 +277,6 @@ class MetaImageNet(ImageNet):
 
     def __getitem__(self, item):
         if not self.use_episodes:
-#             assert self.n_base_support_samples == 0 # this is not implemented for base support =! n_shot.
             
             if self.split == "train" and self.phase == "train" and self.n_base_support_samples > 0:
                     assert self.n_base_support_samples > 0
@@ -326,15 +325,7 @@ class MetaImageNet(ImageNet):
                     support_xs_ids_sampled = np.random.choice(range(imgs.shape[0]), self.n_shots, False)
                     support_xs.append(imgs[support_xs_ids_sampled])
                     lbl = idx
-        #             if self.eval_mode in ["few-shot-incremental"]:
-        #                 lbl = 64+idx
-                    if self.eval_mode in ["few-shot-incremental",
-                                          "zero-shot",
-                                          "zero-shot-incremental",
-                                          "few-shot-language-incremental",
-                                          "few-shot-incremental-fine-tune",
-                                          "few-shot-incremental-language-pretrain-linear-tune",
-                                          "hierarchical-incremental-few-shot"]:
+                    if self.eval_mode in ["few-shot-incremental-fine-tune"]:
                         lbl = cls
                     support_ys.append([lbl] * self.n_shots) #
                     query_xs_ids = np.setxor1d(np.arange(imgs.shape[0]), support_xs_ids_sampled)
@@ -358,9 +349,7 @@ class MetaImageNet(ImageNet):
                 support_xs = torch.stack(list(map(lambda x: self.train_transform(x.squeeze()), support_xs)))
                 query_xs = torch.stack(list(map(lambda x: self.test_transform(x.squeeze()), query_xs)))
             
-        else:
-            
-                
+        else: # to match XtarNet  
             if self.split == "train" and self.phase == "train":
                     assert self.n_base_support_samples > 0
                     # These samples will be stored in memory for every episode.
@@ -391,8 +380,7 @@ class MetaImageNet(ImageNet):
                     query_ys = support_ys
                     
             else:
-#                 assert self.n_base_support_samples == 0
-                
+     
                 # Actual query.
                 query_xs_ids = self.episode_query_ids[item]
                 query_xs = np.array(self.imgs[query_xs_ids])

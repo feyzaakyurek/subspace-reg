@@ -4,6 +4,8 @@ This repo contains the source code for the following paper:
 
 [**Subspace Regularizers for Few-Shot Class Incremental Learning**](https://arxiv.org/abs/2110.07059), Afra Feyza Akyürek, Ekin Akyürek, Derry Wijaya, Jacob Andreas. ICLR 2022.
 
+![](teaserv7.png)
+
 
 ## Installation
 
@@ -17,9 +19,9 @@ If running `multi-session` create and navigate to `data/miniImageNet` in this re
 
 Create a folder named `dumped` and cd into it. Download pretrained models for `multi-session` from the same link above (multi-session-resnet18.tar.gz), extract and place the contents under `dumped/backbones/continual/resnet18`. The numbered folder names refer to the seeds. Eventually you will have `dumped/backbones/continual/resnet18/1`, `dumped/backbones/continual/resnet18/2`, etc.
 
-For single-session experiments please checkout the branch `singlesession`.
-
 ## Running
+
+The repo currently support only multi-session experiments.
 
 ### Using provided pretrained models
 
