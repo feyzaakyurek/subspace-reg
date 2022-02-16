@@ -1,10 +1,11 @@
 # Subspace Regularizers
 
-This repo contains the source code for the following paper:  
-
-[**Subspace Regularizers for Few-Shot Class Incremental Learning**](https://arxiv.org/abs/2110.07059), Afra Feyza Akyürek, Ekin Akyürek, Derry Wijaya, Jacob Andreas. ICLR 2022.
+This repo contains the source code for the following paper: [**Subspace Regularizers for Few-Shot Class Incremental Learning**](https://arxiv.org/abs/2110.07059), Afra Feyza Akyürek, Ekin Akyürek, Derry Wijaya, Jacob Andreas. ICLR 2022. [link](https://arxiv.org/abs/2110.07059)
 
 ![](teaserv7.png)
+
+Few-shot class incremental learning (FSCIL) refers to the problem of updating a trained classifier to discriminate among an expanded set of classes with limited labeled data. We focus on the image classification problem. The two key challenges are catastrophic forgetting of old classes and overfitting to new classes due to small data. Subspace regularizarization while helps controlling forgetting, it remedies overfitting by regularizing the novel weights towards a feature space learned by old classes. Thanks to this simple fix, we are able to augment the last linear layer to accommodate more classes and continue fine-tuning the linear classifier on the new data as usual.
+
 
 ## Installation
 
