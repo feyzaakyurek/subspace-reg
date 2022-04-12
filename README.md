@@ -21,7 +21,7 @@ Create a folder named `dumped` and cd into it. Download pretrained models for `m
 
 ## Running
 
-The repo currently support only multi-session experiments.
+The repo currently supports only multi-session experiments.
 
 ### Using provided pretrained models
 
