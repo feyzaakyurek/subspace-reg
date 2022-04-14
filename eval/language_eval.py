@@ -279,8 +279,7 @@ def few_shot_finetune_incremental_test(net,
                 # Default is semantic subspace reg, here override language
                 # pulling i.e. regularization with simple subspace regularizer
                 if opt.attraction_override == "distance2subspace":
-                    pullers = lang_puller.get_projected_weight(opt.label_pull,
-                                                               base_weight,
+                    pullers = lang_puller.get_projected_weight(base_weight,
                                                                net.classifier.weight[len(vocab_base):,:])
 
                 reg = lang_puller.loss1(opt.label_pull,
